@@ -11,7 +11,10 @@ import pandas as pd
 
 from src.data import load_inputs, get_param_value
 from src.scenarios import TransitionScenario, PhysicalScenario
-from src.risk import apply_transition, apply_physical, map_expected_loss_to_spreads, calculate_expected_loss, FinancingImpact
+from src.risk import (
+    apply_transition, apply_physical, map_expected_loss_to_spreads, calculate_expected_loss, FinancingImpact,
+    assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment
+)
 from src.financials import compute_cashflows_timeseries, calculate_metrics, CashFlowTimeSeries, FinancialMetrics
 
 
@@ -22,6 +25,7 @@ class ScenarioResult:
     cashflow: CashFlowTimeSeries
     metrics: FinancialMetrics
     financing: FinancingImpact | None = None  # Only for risk scenarios
+    credit_rating: RatingAssessment | None = None  # Credit rating assessment
 
 
 class CRPModelRunner:
@@ -101,10 +105,40 @@ class CRPModelRunner:
 
         metrics = calculate_metrics(cashflow, plant_params)
 
+        # Calculate credit rating based on average annual performance
+        avg_ebitda = float(cashflow.ebitda.mean())
+        capacity_mw = plant_params.get('capacity_mw', 2000)
+        total_capex = plant_params.get('total_capex_million', 3200) * 1e6
+        debt_fraction = plant_params.get('debt_fraction', 0.70)
+        equity_fraction = plant_params.get('equity_fraction', 0.30)
+        debt_interest = plant_params.get('debt_interest_rate', 0.05)
+
+        # Estimate balance sheet items
+        fixed_assets = total_capex  # Simplified: assume fixed assets = capex
+        total_debt = total_capex * debt_fraction
+        total_equity = total_capex * equity_fraction
+        total_assets = total_capex
+        interest_expense = total_debt * debt_interest
+        cash_and_equivalents = avg_ebitda * 0.1  # Assume 10% of EBITDA in cash
+
+        rating_metrics = calculate_rating_metrics_from_financials(
+            capacity_mw=capacity_mw,
+            ebitda=avg_ebitda,
+            fixed_assets=fixed_assets,
+            interest_expense=interest_expense,
+            total_debt=total_debt,
+            cash_and_equivalents=cash_and_equivalents,
+            total_equity=total_equity,
+            total_assets=total_assets,
+        )
+
+        credit_rating = assess_credit_rating(rating_metrics)
+
         return ScenarioResult(
             scenario_name=scenario_name,
             cashflow=cashflow,
             metrics=metrics,
+            credit_rating=credit_rating,
         )
 
     def run_multi_scenario(
@@ -185,11 +219,27 @@ class CRPModelRunner:
             row.update(result.metrics.to_dict())
             if result.financing:
                 row.update(result.financing.to_dict())
+            if result.credit_rating:
+                row.update(result.credit_rating.to_dict())
             metrics_rows.append(row)
 
         metrics_df = pd.DataFrame(metrics_rows)
         metrics_path = output_dir / "scenario_comparison.csv"
         metrics_df.to_csv(metrics_path, index=False)
         paths["scenario_comparison"] = metrics_path
+
+        # Export credit rating summary
+        rating_rows = []
+        for name, result in results.items():
+            if result.credit_rating:
+                row = {"scenario": name}
+                row.update(result.credit_rating.to_dict())
+                rating_rows.append(row)
+
+        if rating_rows:
+            rating_df = pd.DataFrame(rating_rows)
+            rating_path = output_dir / "credit_ratings.csv"
+            rating_df.to_csv(rating_path, index=False)
+            paths["credit_ratings"] = rating_path
 
         return paths

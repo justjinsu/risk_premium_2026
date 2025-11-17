@@ -66,11 +66,12 @@ def main():
     metrics_df = pd.read_csv(scenario_file)
 
     # Main tabs
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "📊 Scenario Comparison",
         "💰 Financial Metrics",
         "📈 Cash Flow Analysis",
-        "🔬 Climate Risk Premium"
+        "🔬 Climate Risk Premium",
+        "⭐ Credit Rating Migration"
     ])
 
     with tab1:
@@ -201,12 +202,218 @@ def main():
         else:
             st.warning("No risk scenario data available. Run the model first.")
 
+    with tab5:
+        st.header("⭐ Credit Rating Migration Analysis")
+        st.markdown("""
+        Credit ratings based on **Korea Investors Service (KIS)** methodology for Private Power Generation (IPP).
+        Quantitative assessment across 6 metrics: capacity, profitability, coverage, and leverage ratios.
+        """)
+
+        # Check if credit ratings exist
+        credit_file = processed_dir / "credit_ratings.csv"
+        if credit_file.exists():
+            credit_df = pd.read_csv(credit_file)
+
+            # Rating migration summary
+            st.subheader("Rating Migration Summary")
+
+            if "baseline" in credit_df["scenario"].values:
+                baseline_rating = credit_df[credit_df["scenario"] == "baseline"].iloc[0]
+
+                col1, col2, col3, col4 = st.columns(4)
+
+                with col1:
+                    st.metric(
+                        "Baseline Rating",
+                        baseline_rating["overall_rating"],
+                        delta=f"{baseline_rating['spread_bps']:.0f} bps"
+                    )
+
+                # Find worst rating
+                worst_idx = credit_df["rating_numeric"].idxmax()
+                worst_rating = credit_df.loc[worst_idx]
+
+                with col2:
+                    notch_change = worst_rating["rating_numeric"] - baseline_rating["rating_numeric"]
+                    st.metric(
+                        "Worst-Case Rating",
+                        worst_rating["overall_rating"],
+                        delta=f"↓ {notch_change:.0f} notches",
+                        delta_color="inverse"
+                    )
+
+                with col3:
+                    spread_increase = worst_rating["spread_bps"] - baseline_rating["spread_bps"]
+                    st.metric(
+                        "Spread Increase",
+                        f"{spread_increase:.0f} bps",
+                        delta=worst_rating["scenario"]
+                    )
+
+                with col4:
+                    investment_grade = "Yes" if baseline_rating["rating_numeric"] <= 4 else "No"
+                    worst_ig = "Yes" if worst_rating["rating_numeric"] <= 4 else "No"
+                    ig_loss = "Lost" if investment_grade == "Yes" and worst_ig == "No" else "Maintained"
+                    st.metric(
+                        "Investment Grade",
+                        worst_ig,
+                        delta=ig_loss,
+                        delta_color="inverse" if ig_loss == "Lost" else "normal"
+                    )
+
+            # Rating migration matrix
+            st.subheader("Rating by Scenario")
+
+            import plotly.graph_objects as go
+
+            # Create rating heatmap
+            rating_map = {"AAA": 1, "AA": 2, "A": 3, "BBB": 4, "BB": 5, "B": 6}
+            scenarios = credit_df["scenario"].tolist()
+            ratings = credit_df["overall_rating"].tolist()
+            spreads = credit_df["spread_bps"].tolist()
+
+            colors = ["#2ecc71" if r in ["AAA", "AA", "A", "BBB"] else "#e74c3c" for r in ratings]
+
+            fig = go.Figure(data=[go.Bar(
+                x=scenarios,
+                y=[rating_map.get(r, 6) for r in ratings],
+                text=[f"{r}<br>{s:.0f} bps" for r, s in zip(ratings, spreads)],
+                textposition="auto",
+                marker_color=colors,
+                hovertemplate="<b>%{x}</b><br>Rating: %{text}<extra></extra>"
+            )])
+
+            fig.update_layout(
+                title="Credit Rating by Scenario",
+                xaxis_title="Scenario",
+                yaxis_title="Rating Level (1=AAA, 6=B)",
+                yaxis=dict(
+                    tickmode='array',
+                    tickvals=[1, 2, 3, 4, 5, 6],
+                    ticktext=['AAA', 'AA', 'A', 'BBB', 'BB', 'B'],
+                    autorange="reversed"
+                ),
+                height=500,
+                shapes=[
+                    dict(
+                        type='line',
+                        x0=-0.5,
+                        x1=len(scenarios)-0.5,
+                        y0=4.5,
+                        y1=4.5,
+                        line=dict(color='red', width=2, dash='dash'),
+                    )
+                ],
+                annotations=[
+                    dict(
+                        x=len(scenarios)/2,
+                        y=4.5,
+                        text="Investment Grade Threshold",
+                        showarrow=False,
+                        yshift=10,
+                        font=dict(color="red", size=12)
+                    )
+                ]
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Component ratings breakdown
+            st.subheader("Component Ratings Breakdown")
+
+            component_cols = ["scenario", "capacity_rating", "profitability_rating", "coverage_rating",
+                            "net_debt_leverage_rating", "equity_leverage_rating", "asset_leverage_rating"]
+
+            if all(col in credit_df.columns for col in component_cols):
+                selected_scenario = st.selectbox(
+                    "Select Scenario for Detailed Breakdown",
+                    credit_df["scenario"].tolist(),
+                    key="rating_scenario"
+                )
+
+                scenario_data = credit_df[credit_df["scenario"] == selected_scenario].iloc[0]
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.markdown("**Business Stability**")
+                    st.metric("Capacity", scenario_data["capacity_rating"],
+                             delta=f"{scenario_data['capacity_mw']:.0f} MW")
+                    st.metric("Profitability (EBITDA/Fixed Assets)",
+                             scenario_data["profitability_rating"],
+                             delta=f"{scenario_data['ebitda_to_fixed_assets']:.2f}%")
+
+                    st.markdown("**Coverage**")
+                    st.metric("EBITDA/Interest", scenario_data["coverage_rating"],
+                             delta=f"{scenario_data['ebitda_to_interest']:.2f}x")
+
+                with col2:
+                    st.markdown("**Leverage Ratios**")
+                    st.metric("Net Debt/EBITDA", scenario_data["net_debt_leverage_rating"],
+                             delta=f"{scenario_data['net_debt_to_ebitda']:.2f}x")
+                    st.metric("Debt/Equity", scenario_data["equity_leverage_rating"],
+                             delta=f"{scenario_data['debt_to_equity']:.2f}%")
+                    st.metric("Debt/Assets", scenario_data["asset_leverage_rating"],
+                             delta=f"{scenario_data['debt_to_assets']:.2f}%")
+
+            # Full ratings table
+            st.subheader("Detailed Ratings Table")
+            display_cols = ["scenario", "overall_rating", "spread_bps", "capacity_rating",
+                          "profitability_rating", "coverage_rating", "net_debt_leverage_rating",
+                          "equity_leverage_rating", "asset_leverage_rating"]
+            if all(col in credit_df.columns for col in display_cols):
+                display_df = credit_df[display_cols].copy()
+                display_df.columns = ["Scenario", "Overall", "Spread (bps)", "Capacity",
+                                     "Profitability", "Coverage", "Net Debt", "Equity", "Assets"]
+                st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+            # KIS Rating Criteria Reference
+            with st.expander("📚 KIS Rating Criteria Reference"):
+                st.markdown("""
+                ### Korea Investors Service (KIS) Rating Grid
+
+                | Metric | AAA | AA | A | BBB | BB | B |
+                |--------|-----|----|----|-----|----|----|
+                | **Capacity (MW)** | ≥2000 | ≥800 | ≥400 | ≥100 | ≥20 | <20 |
+                | **EBITDA/Fixed Assets (%)** | ≥15 | ≥11 | ≥8 | ≥4 | ≥1 | <1 |
+                | **EBITDA/Interest (x)** | ≥12 | ≥6 | ≥4 | ≥2 | ≥1 | <1 |
+                | **Net Debt/EBITDA (x)** | ≤1 | ≤4 | ≤7 | ≤10 | ≤12 | >12 |
+                | **Debt/Equity (%)** | ≤80 | ≤150 | ≤250 | ≤300 | ≤400 | >400 |
+                | **Debt/Assets (%)** | ≤20 | ≤40 | ≤60 | ≤80 | ≤90 | >90 |
+
+                **Rating Spreads:**
+                - AAA: 50 bps
+                - AA: 100 bps
+                - A: 150 bps
+                - **BBB: 250 bps** (Investment Grade Floor)
+                - BB: 400 bps
+                - B: 600 bps
+
+                **Investment Grade:** AAA, AA, A, BBB (rating_numeric ≤ 4)
+                **Speculative Grade:** BB, B (rating_numeric > 4)
+                """)
+
+        else:
+            st.warning("No credit rating data found. Run the model to generate ratings.")
+
     # Footer
     st.sidebar.markdown("---")
     st.sidebar.markdown("""
     **About this tool**
+
+    **Features:**
+    - Climate Risk Premium (CRP) analysis
+    - KIS credit rating assessment
+    - Multi-scenario comparison
+    - Rating migration analysis
+
     Developed for climate risk analysis of the Samcheok Power Plant.
-    Open-source framework for quantifying Climate Risk Premium (CRP).
+    Open-source framework for quantifying climate-finance risks.
+
+    **Methodologies:**
+    - Expected loss framework
+    - KIS quantitative rating grid
+    - Project finance metrics (DSCR, LLCR)
     """)
 
 
