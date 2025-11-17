@@ -333,6 +333,6 @@ Aggressive Climate Risk:
 
 ---
 
-**Author**: Climate Risk Analysis Team, Plan It Institute
+**Author**: Jinsu Park, PLANiT Institute
 **Date**: November 18, 2025
 **Framework Version**: 2.0 (with KIS credit rating integration)

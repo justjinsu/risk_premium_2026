@@ -49,4 +49,4 @@
 \contentsline {subsection}{\numberline {A.2}Proof of Convexity Properties}{18}{subsection.A.2}%
 \contentsline {section}{\numberline {B}Numerical Implementation Details}{18}{appendix.B}%
 \contentsline {subsection}{\numberline {B.1}Algorithm for NPV Calculation}{18}{subsection.B.1}%
-\contentsline {subsection}{\numberline {B.2}Convergence Properties}{19}{subsection.B.2}%
+\contentsline {subsection}{\numberline {B.2}Convergence Properties}{18}{subsection.B.2}%
