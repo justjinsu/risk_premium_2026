@@ -13,13 +13,13 @@ from src.scenarios import TransitionScenario
 class TransitionAdjustments:
     capacity_factor: float
     operating_years: int
-    carbon_price: float
 
 
 def apply_transition(plant_params: Dict[str, Any], scenario: TransitionScenario) -> TransitionAdjustments:
     """
     Apply transition assumptions to baseline plant parameters.
-    For now we only compute adjusted capacity factor and operating life.
+    Computes adjusted capacity factor and operating life.
+    Note: Carbon price is accessed directly from scenario.get_carbon_price(year) in cash flow calculations.
     """
     baseline_cf = float(plant_params.get("capacity_factor", 0.5))
     adjusted_cf = max(0.0, baseline_cf - scenario.dispatch_priority_penalty)
@@ -28,5 +28,4 @@ def apply_transition(plant_params: Dict[str, Any], scenario: TransitionScenario)
     return TransitionAdjustments(
         capacity_factor=adjusted_cf,
         operating_years=adjusted_life,
-        carbon_price=scenario.carbon_price,
     )
