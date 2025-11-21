@@ -10,10 +10,11 @@ from typing import Dict, Any, List
 import pandas as pd
 
 from src.data import load_inputs, get_param_value
-from src.scenarios import TransitionScenario, PhysicalScenario
+from src.scenarios import TransitionScenario, PhysicalScenario, MarketScenario
 from src.risk import (
     apply_transition, apply_physical, map_expected_loss_to_spreads, calculate_expected_loss, FinancingImpact,
-    assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment
+    assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment,
+    calculate_financing_from_rating
 )
 from src.financials import compute_cashflows_timeseries, calculate_metrics, CashFlowTimeSeries, FinancialMetrics
 
@@ -70,6 +71,17 @@ class CRPModelRunner:
 
     def _load_physical_scenario(self, scenario_name: str) -> PhysicalScenario:
         """Load physical scenario from CSV."""
+        # Override for specific hardcoded scenarios if not in CSV
+        if scenario_name == "severe_drought":
+            # Force 50% water availability
+            return PhysicalScenario(
+                name="severe_drought",
+                wildfire_outage_rate=0.05,
+                drought_derate=0.05,
+                cooling_temp_penalty=0.02,
+                water_availability_pct=50.0
+            )
+
         row = self.dataset.physical_risks.get(scenario_name)
         if not row:
             raise ValueError(f"Physical scenario '{scenario_name}' not found")
@@ -79,19 +91,33 @@ class CRPModelRunner:
             wildfire_outage_rate=float(row.get('wildfire_outage_rate', 0)),
             drought_derate=float(row.get('drought_derate', 0)),
             cooling_temp_penalty=float(row.get('cooling_temp_penalty', 0)),
+            water_availability_pct=float(row.get('water_availability_pct', 100.0)),
         )
+
+    def _load_market_scenario(self, scenario_name: str) -> MarketScenario:
+        """Load market scenario (demand/price)."""
+        # For now, create default or simple variations since we don't have a CSV for this yet
+        # In a real app, this would load from data/raw/market_scenarios.csv
+        if scenario_name == "low_demand":
+            return MarketScenario(name="low_demand", demand_growth_pct=-1.0, price_sensitivity=0.5)
+        elif scenario_name == "high_demand":
+            return MarketScenario(name="high_demand", demand_growth_pct=2.0, price_sensitivity=0.5)
+        else:
+            return MarketScenario(name="baseline", demand_growth_pct=1.0, price_sensitivity=0.5)
 
     def run_scenario(
         self,
         scenario_name: str,
         transition_scenario_name: str = "baseline",
         physical_scenario_name: str = "baseline",
+        market_scenario_name: str = "baseline",
     ) -> ScenarioResult:
         """Run a single scenario."""
         plant_params = self._get_plant_params()
 
         transition_scenario = self._load_transition_scenario(transition_scenario_name)
         physical_scenario = self._load_physical_scenario(physical_scenario_name)
+        market_scenario = self._load_market_scenario(market_scenario_name)
 
         transition_adj = apply_transition(plant_params, transition_scenario)
         physical_adj = apply_physical(plant_params, physical_scenario)
@@ -101,6 +127,7 @@ class CRPModelRunner:
             transition_scenario,
             transition_adj,
             physical_adj,
+            market_scenario,
         )
 
         metrics = calculate_metrics(cashflow, plant_params)
@@ -161,6 +188,9 @@ class CRPModelRunner:
                 {"name": "high_physical", "transition": "baseline", "physical": "high_physical"},
                 {"name": "combined_moderate", "transition": "moderate_transition", "physical": "moderate_physical"},
                 {"name": "combined_aggressive", "transition": "aggressive_transition", "physical": "high_physical"},
+                # New Scenarios
+                {"name": "low_demand", "transition": "baseline", "physical": "baseline", "market": "low_demand"},
+                {"name": "severe_drought", "transition": "baseline", "physical": "severe_drought", "market": "baseline"}, # Will need to ensure high_physical has water constraints
             ]
 
         results = {}
@@ -168,10 +198,12 @@ class CRPModelRunner:
 
         # Run all scenarios
         for scenario_spec in scenarios:
+            market_name = scenario_spec.get("market", "baseline")
             result = self.run_scenario(
                 scenario_spec["name"],
                 scenario_spec["transition"],
                 scenario_spec["physical"],
+                market_name,
             )
             results[scenario_spec["name"]] = result
 
@@ -184,13 +216,31 @@ class CRPModelRunner:
             financing_params = self._get_financing_params()
             total_capex = plant_params.get('total_capex_million', 3200) * 1e6
             baseline_npv = baseline_result.metrics.npv
+            
+            # Get baseline spread from its rating if available, otherwise default
+            baseline_spread = 150.0
+            if baseline_result.credit_rating:
+                baseline_spread = baseline_result.credit_rating.overall_rating.to_spread_bps()
 
             for name, result in results.items():
                 if name != "baseline":
                     risk_npv = result.metrics.npv
-                    el_pct = calculate_expected_loss(baseline_npv, risk_npv, total_capex)
                     npv_loss = baseline_npv - risk_npv
-                    result.financing = map_expected_loss_to_spreads(el_pct, npv_loss, financing_params)
+                    
+                    # Use credit rating spread if available
+                    if result.credit_rating:
+                        rating_spread = result.credit_rating.overall_rating.to_spread_bps()
+                        result.financing = calculate_financing_from_rating(
+                            rating_spread_bps=rating_spread,
+                            baseline_spread_bps=baseline_spread,
+                            npv_loss=npv_loss,
+                            total_capex=total_capex,
+                            params=financing_params
+                        )
+                    else:
+                        # Fallback to old linear model if no rating (shouldn't happen)
+                        el_pct = calculate_expected_loss(baseline_npv, risk_npv, total_capex)
+                        result.financing = map_expected_loss_to_spreads(el_pct, npv_loss, financing_params)
 
         return results
 

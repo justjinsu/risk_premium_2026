@@ -8,7 +8,7 @@ from typing import Dict, Any, List
 import numpy as np
 
 from src.risk import TransitionAdjustments, PhysicalAdjustments
-from src.scenarios import TransitionScenario
+from src.scenarios import TransitionScenario, MarketScenario
 
 
 @dataclass
@@ -50,6 +50,7 @@ def compute_cashflows_timeseries(
     transition_scenario: TransitionScenario,
     transition_adj: TransitionAdjustments,
     physical_adj: PhysicalAdjustments,
+    market_scenario: MarketScenario | None = None,
     start_year: int = 2025,
 ) -> CashFlowTimeSeries:
     """
@@ -70,14 +71,38 @@ def compute_cashflows_timeseries(
 
     # Capacity factor adjusted for both transition and physical risks
     base_cf = transition_adj.capacity_factor
-    cf_series = np.full(n_years, base_cf * (1 - physical_adj.capacity_derate))
+    
+    # Apply Market Demand factor to Base CF if market scenario exists
+    if market_scenario:
+        # Demand growth affects utilization
+        demand_factors = np.array([market_scenario.get_demand_factor(year, start_year) for year in years])
+        # Assume 1:1 relationship between demand growth and CF for simplicity, capped at 1.0
+        base_cf_series = np.minimum(1.0, base_cf * demand_factors)
+    else:
+        base_cf_series = np.full(n_years, base_cf)
+
+    # Apply Physical Constraints (Derates + Water Constraints)
+    # 1. Subtract derates (efficiency loss)
+    cf_series = base_cf_series * (1 - physical_adj.capacity_derate)
+    
+    # 2. Apply Water Constraint (Hard Cap)
+    # If water is constrained, we cannot exceed the water_constrained_capacity
+    water_cap = getattr(physical_adj, "water_constrained_capacity", 1.0)
+    cf_series = np.minimum(cf_series, water_cap)
+    
     cf_series = np.maximum(cf_series, 0.0)
 
     # Annual generation
     annual_mwh = capacity_mw * 8760 * cf_series
 
     # Revenue
-    revenue = annual_mwh * price
+    # Apply Market Price if scenario exists
+    if market_scenario:
+        prices = np.array([market_scenario.get_power_price(year, start_year) for year in years])
+    else:
+        prices = np.full(n_years, price)
+        
+    revenue = annual_mwh * prices
 
     # Carbon price trajectory
     carbon_prices = np.array([transition_scenario.get_carbon_price(year) for year in years])

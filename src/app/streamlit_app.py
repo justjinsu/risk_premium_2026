@@ -66,7 +66,8 @@ def main():
     metrics_df = pd.read_csv(scenario_file)
 
     # Main tabs
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab_profile, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "🏭 Company Profile",
         "📊 Scenario Comparison",
         "💰 Financial Metrics",
         "📈 Cash Flow Analysis",
@@ -74,8 +75,78 @@ def main():
         "⭐ Credit Rating Migration"
     ])
 
+    with tab_profile:
+        st.header("🏭 Samcheok Blue Power (POSCO)")
+        
+        # Load plant params for dynamic display
+        plant_df = pd.read_csv(base_dir / "data" / "raw" / "plant_parameters.csv")
+        plant_params = dict(zip(plant_df['param_name'], plant_df['value']))
+        
+        capex_trillion = float(plant_params.get('total_capex_million', 4900)) / 1000 * 1.3 # Approx conversion to KRW
+        bond_yield = float(plant_params.get('debt_interest_rate', 0.061)) * 100
+        capacity = float(plant_params.get('capacity_mw', 2100))
+        
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            st.markdown(f"""
+            ### Project Overview
+            **Samcheok Blue Power** is a {capacity:,.0f} MW ultra-supercritical coal-fired power plant in Samcheok, Gangwon Province. It is the **last coal plant** to be built in South Korea.
+            
+            - **Owner:** Samcheok Blue Power Co., Ltd. (Subsidiary of POSCO)
+            - **Status:** Unit 1 (Commercial Operation May 2024), Unit 2 (Oct 2024)
+            - **Total Investment:** ~{capex_trillion:.1f} Trillion KRW (Model Input: ${plant_params.get('total_capex_million'):,.0f}M)
+            - **Financing:** Project Finance + Corporate Bonds
+            
+            ### Financial Context
+            The project has faced significant financing challenges due to the global coal phase-out trend ("Coal Exit").
+            
+            - **Credit Rating:** AA- (Negative Outlook) $\\to$ A+ (Downgraded due to ESG concerns)
+            - **Bond Yields:** Model uses **{bond_yield:.1f}%**, reflecting the "Coal Premium" over standard A+ rates.
+            - **Refinancing Risk:** Large volume of corporate bonds maturing in 2024-2026.
+            
+            ### Policy Environment (11th Basic Plan)
+            - **Coal Phase-out:** Korea aims to phase out all coal plants by the 2040s.
+            - **Conversion:** Plans to convert aging coal plants to LNG/Hydrogen.
+            - **Risk:** Samcheok, being the newest, faces the highest risk of becoming a **Stranded Asset** if forced to retire early (e.g., 2040) before recovering its 30-year useful life.
+            """)
+            
+        with col2:
+            st.info(f"""
+            **Key Specs**
+            - **Capacity:** {capacity:,.0f} MW
+            - **Efficiency:** {float(plant_params.get('efficiency', 0.42))*100:.0f}% (USC)
+            - **Fuel:** Bituminous Coal
+            - **Life:** {int(plant_params.get('useful_life', 30))} Years
+            """)
+            
+            st.warning("""
+            **Risk Factors**
+            - **Transition:** Carbon Tax, Early Retirement
+            - **Market:** Low Demand, Renewable Competition
+            - **Physical:** Drought (Water Cooling), Wildfires
+            """)
+
     with tab1:
         st.header("Scenario Comparison")
+        
+        # Move Key Findings to top
+        st.subheader("Key Findings")
+        baseline_row = metrics_df[metrics_df["scenario"] == "baseline"]
+        if len(baseline_row) > 0:
+            baseline = baseline_row.iloc[0]
+            risk_scenarios = metrics_df[metrics_df["scenario"] != "baseline"]
+            
+            if len(risk_scenarios) > 0:
+                worst_idx = risk_scenarios["npv_million"].idxmin()
+                worst_case = risk_scenarios.loc[worst_idx]
+                
+                k1, k2, k3 = st.columns(3)
+                k1.metric("Baseline NPV", f"${baseline['npv_million']:,.0f}M")
+                k2.metric("Worst Case NPV", f"${worst_case['npv_million']:,.0f}M", 
+                         delta=f"{(worst_case['npv_million'] - baseline['npv_million']):,.0f}M", delta_color="inverse")
+                k3.metric("Max Climate Risk Premium", f"{worst_case.get('crp_bps', 0):.0f} bps",
+                         delta="Cost of Capital Spike", delta_color="inverse")
 
         col1, col2 = st.columns(2)
 
@@ -130,6 +201,22 @@ def main():
             st.subheader("Capacity Factor Trajectory")
             fig_cf = plot_capacity_factor_trajectory(cashflow_dfs)
             st.plotly_chart(fig_cf, use_container_width=True)
+            
+            # Market Price Trajectory
+            st.subheader("Power Price Trajectory")
+            import plotly.express as px
+            
+            price_data = []
+            for name, df in cashflow_dfs.items():
+                if "price" in df.columns:
+                    for _, row in df.iterrows():
+                        price_data.append({"Year": row["year"], "Price ($/MWh)": row["price"], "Scenario": name})
+            
+            if price_data:
+                price_df = pd.DataFrame(price_data)
+                fig_price = px.line(price_df, x="Year", y="Price ($/MWh)", color="Scenario",
+                                  title="Wholesale Power Price Forecast")
+                st.plotly_chart(fig_price, use_container_width=True)
 
             # Waterfall chart
             st.subheader("Cash Flow Breakdown")

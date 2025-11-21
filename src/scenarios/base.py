@@ -40,6 +40,7 @@ class PhysicalScenario:
     wildfire_outage_rate: float       # annual outage probability
     drought_derate: float             # capacity derate percentage
     cooling_temp_penalty: float       # efficiency loss percentage
+    water_availability_pct: float = 100.0  # % of normal water supply available
 
 
 @dataclass

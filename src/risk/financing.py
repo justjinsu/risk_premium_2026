@@ -91,3 +91,64 @@ def map_expected_loss_to_spreads(
         wacc_baseline_pct=wacc_baseline * 100,
         wacc_adjusted_pct=wacc_adjusted * 100,
     )
+
+
+def calculate_financing_from_rating(
+    rating_spread_bps: float,
+    baseline_spread_bps: float,
+    npv_loss: float,
+    total_capex: float,
+    params: Dict[str, Any]
+) -> FinancingImpact:
+    """
+    Calculate financing impact based on a specific credit rating spread.
+    
+    Args:
+        rating_spread_bps: The spread associated with the scenario's credit rating (e.g., 250 for BBB)
+        baseline_spread_bps: The spread associated with the baseline scenario
+        npv_loss: Absolute NPV loss (Baseline NPV - Scenario NPV)
+        total_capex: Total CAPEX for expected loss % calculation
+        params: Financing parameters
+    """
+    # Extract parameters
+    equity_slope = float(params.get("equity_slope_pct_per_pct", 0.8))
+    risk_free_rate = float(params.get("risk_free_rate", 0.03))
+    debt_fraction = float(params.get("debt_fraction", 0.70))
+    equity_fraction = float(params.get("equity_fraction", 0.30))
+
+    # Calculate Expected Loss % (for reporting purposes, even if not driving spread)
+    expected_loss_pct = 0.0
+    if total_capex > 0:
+        expected_loss_pct = max(0.0, (npv_loss / total_capex) * 100)
+
+    # 1. Debt Cost
+    # Use the explicit rating spread
+    debt_spread = rating_spread_bps
+    adjusted_debt_rate = risk_free_rate + (debt_spread / 10000)
+    
+    # Baseline debt cost (for comparison)
+    baseline_debt_rate = risk_free_rate + (baseline_spread_bps / 10000)
+
+    # 2. Equity Cost
+    # We still use the linear model for equity premium as we don't have a "Credit Rating for Equity"
+    # Alternatively, we could scale it by the spread increase ratio, but sticking to the slope is safer for now.
+    baseline_equity_rate = 0.12
+    equity_premium_pct = expected_loss_pct * equity_slope
+    adjusted_equity_rate = baseline_equity_rate + (equity_premium_pct / 100)
+
+    # 3. WACC
+    wacc_baseline = debt_fraction * baseline_debt_rate + equity_fraction * baseline_equity_rate
+    wacc_adjusted = debt_fraction * adjusted_debt_rate + equity_fraction * adjusted_equity_rate
+
+    # 4. Climate Risk Premium (CRP)
+    crp = (wacc_adjusted - wacc_baseline) * 10000  # in bps
+
+    return FinancingImpact(
+        expected_loss_pct=expected_loss_pct,
+        npv_loss_million=npv_loss / 1e6,
+        debt_spread_bps=debt_spread,
+        equity_premium_pct=equity_premium_pct,
+        crp_bps=crp,
+        wacc_baseline_pct=wacc_baseline * 100,
+        wacc_adjusted_pct=wacc_adjusted * 100,
+    )

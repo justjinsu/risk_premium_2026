@@ -1,0 +1,19 @@
+param_name,value,unit,description
+capacity_mw,2100,MW,Total capacity (2 units x 1050MW)
+capacity_factor,0.85,decimal,Base load capacity factor
+efficiency,0.42,decimal,Ultra-supercritical efficiency
+fuel_cost_per_mwh,45.0,USD/MWh,Approximate coal cost
+variable_opex,5.0,USD/MWh,Variable O&M
+fixed_opex_per_kw,35.0,USD/kW-yr,Fixed O&M
+total_capex_million,4900,USD Million,Total project cost (4.9 Trillion KRW approx)
+construction_years,5,years,Construction duration
+debt_fraction,0.70,decimal,Estimated debt financing share
+equity_fraction,0.30,decimal,Estimated equity share
+debt_interest_rate,0.061,decimal,Recent bond yield (6.1%)
+risk_free_rate,0.035,decimal,Korea 10Y Treasury
+market_risk_premium,0.06,decimal,Korea Equity Risk Premium
+beta,1.2,decimal,Utility sector beta (adjusted for coal risk)
+corporate_tax_rate,0.24,decimal,Korea Corporate Tax Rate
+useful_life,30,years,Economic life
+depreciation_years,20,years,Depreciation schedule
+inflation_rate,0.02,decimal,Long-term inflation target

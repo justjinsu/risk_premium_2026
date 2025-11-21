@@ -2,7 +2,12 @@
 
 from .transition import TransitionAdjustments, apply_transition
 from .physical import PhysicalAdjustments, apply_physical
-from .financing import FinancingImpact, map_expected_loss_to_spreads, calculate_expected_loss
+from .financing import (
+    FinancingImpact,
+    map_expected_loss_to_spreads,
+    calculate_expected_loss,
+    calculate_financing_from_rating
+)
 from .credit_rating import (
     Rating,
     RatingMetrics,
@@ -20,6 +25,7 @@ __all__ = [
     "FinancingImpact",
     "map_expected_loss_to_spreads",
     "calculate_expected_loss",
+    "calculate_financing_from_rating",
     "Rating",
     "RatingMetrics",
     "RatingAssessment",

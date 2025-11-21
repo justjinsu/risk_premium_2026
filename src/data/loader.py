@@ -36,10 +36,10 @@ def load_inputs(base_dir: Path) -> Dataset:
       - data/raw/physical.csv
       - data/raw/financing.csv
     """
-    plant = load_csv(base_dir / "data" / "raw" / "plant.csv", key_field="parameter")
+    plant = load_csv(base_dir / "data" / "raw" / "plant_parameters.csv", key_field="param_name")
     policy = load_csv(base_dir / "data" / "raw" / "policy.csv", key_field="scenario")
     physical = load_csv(base_dir / "data" / "raw" / "physical.csv", key_field="scenario")
-    financing = load_csv(base_dir / "data" / "raw" / "financing.csv", key_field="parameter")
+    financing = load_csv(base_dir / "data" / "raw" / "financing_params.csv", key_field="param_name")
     return Dataset(
         plant_params=plant,
         policy_scenarios=policy,
