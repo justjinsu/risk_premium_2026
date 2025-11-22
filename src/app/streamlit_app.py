@@ -40,6 +40,21 @@ def main():
     base_dir = Path(__file__).parent.parent.parent
     processed_dir = base_dir / "data" / "processed"
 
+    # New Configuration Options
+    st.sidebar.subheader("Custom Scenario Settings")
+    
+    power_plan = st.sidebar.selectbox(
+        "Power Plan Scenario",
+        ["10th Basic Plan (Baseline)", "11th Basic Plan (Aggressive)"],
+        index=0
+    )
+    
+    physical_risk = st.sidebar.selectbox(
+        "Physical Risk Level",
+        ["Low", "Medium", "High", "Extreme"],
+        index=0
+    )
+
     run_model = st.sidebar.button("🚀 Run Model", type="primary")
 
     # Check if results exist
@@ -50,7 +65,32 @@ def main():
         with st.spinner("Running multi-scenario analysis..."):
             try:
                 runner = CRPModelRunner(base_dir)
-                results = runner.run_multi_scenario()
+                
+                # Define scenarios to run
+                # Start with standard set
+                scenarios_to_run = [
+                    {"name": "baseline", "transition": "baseline", "physical": "baseline"},
+                    {"name": "moderate_transition", "transition": "moderate_transition", "physical": "baseline"},
+                    {"name": "aggressive_transition", "transition": "aggressive_transition", "physical": "baseline"},
+                    {"name": "high_physical", "transition": "baseline", "physical": "high_physical"},
+                    {"name": "combined_aggressive", "transition": "aggressive_transition", "physical": "high_physical"},
+                ]
+                
+                # Add Custom Scenario
+                plan_map = {
+                    "10th Basic Plan (Baseline)": "official_10th_plan",
+                    "11th Basic Plan (Aggressive)": "official_11th_plan"
+                }
+                
+                custom_name = f"Custom: {power_plan.split(' ')[0]} + {physical_risk} Risk"
+                scenarios_to_run.append({
+                    "name": custom_name,
+                    "transition": "baseline", # Base transition params (carbon price etc)
+                    "physical": physical_risk,
+                    "power_plan": plan_map[power_plan]
+                })
+                
+                results = runner.run_multi_scenario(scenarios_to_run)
                 runner.export_results(results, processed_dir)
                 st.sidebar.success(f"✅ Ran {len(results)} scenarios successfully!")
                 results_exist = True

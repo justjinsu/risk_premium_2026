@@ -14,9 +14,12 @@ from src.scenarios import TransitionScenario, PhysicalScenario, MarketScenario
 from src.risk import (
     apply_transition, apply_physical, map_expected_loss_to_spreads, calculate_expected_loss, FinancingImpact,
     assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment,
+    assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment,
     calculate_financing_from_rating
 )
 from src.financials import compute_cashflows_timeseries, calculate_metrics, CashFlowTimeSeries, FinancialMetrics
+from src.scenarios.korea_power_plan import load_korea_power_plan_scenarios
+from src.risk.physical import get_physical_risk_scenario
 
 
 @dataclass
@@ -37,6 +40,7 @@ class CRPModelRunner:
     def __init__(self, base_dir: Path):
         self.base_dir = Path(base_dir)
         self.dataset = load_inputs(self.base_dir)
+        self.power_plans = load_korea_power_plan_scenarios(self.base_dir / "data/raw/korea_power_plan.csv")
 
     def _get_plant_params(self) -> Dict[str, Any]:
         """Extract plant parameters as a flat dict."""
@@ -82,9 +86,14 @@ class CRPModelRunner:
                 water_availability_pct=50.0
             )
 
+        # Check for dynamic levels first
+        if scenario_name.lower() in ["low", "medium", "high", "extreme"]:
+            return get_physical_risk_scenario(scenario_name)
+
         row = self.dataset.physical_risks.get(scenario_name)
         if not row:
-            raise ValueError(f"Physical scenario '{scenario_name}' not found")
+            # Fallback to baseline if not found
+            return get_physical_risk_scenario("Low")
 
         return PhysicalScenario(
             name=scenario_name,
@@ -111,6 +120,7 @@ class CRPModelRunner:
         transition_scenario_name: str = "baseline",
         physical_scenario_name: str = "baseline",
         market_scenario_name: str = "baseline",
+        power_plan_name: str | None = None,
     ) -> ScenarioResult:
         """Run a single scenario."""
         plant_params = self._get_plant_params()
@@ -119,7 +129,16 @@ class CRPModelRunner:
         physical_scenario = self._load_physical_scenario(physical_scenario_name)
         market_scenario = self._load_market_scenario(market_scenario_name)
 
-        transition_adj = apply_transition(plant_params, transition_scenario)
+        # Load Korea Power Plan if specified
+        korea_plan = None
+        if power_plan_name and power_plan_name in self.power_plans:
+            korea_plan = self.power_plans[power_plan_name]
+
+        transition_adj = apply_transition(
+            plant_params, 
+            transition_scenario,
+            korea_plan_scenario=korea_plan
+        )
         physical_adj = apply_physical(plant_params, physical_scenario)
 
         cashflow = compute_cashflows_timeseries(
@@ -199,11 +218,14 @@ class CRPModelRunner:
         # Run all scenarios
         for scenario_spec in scenarios:
             market_name = scenario_spec.get("market", "baseline")
+            power_plan_name = scenario_spec.get("power_plan", None)
+            
             result = self.run_scenario(
                 scenario_spec["name"],
                 scenario_spec["transition"],
                 scenario_spec["physical"],
                 market_name,
+                power_plan_name,
             )
             results[scenario_spec["name"]] = result
 
