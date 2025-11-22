@@ -24,7 +24,7 @@
 \cortext[cor1]{Corresponding author}
 
 \begin{abstract}
-As the global energy transition accelerates, coal-fired power assets face increasing stranded asset risks from both policy constraints and physical climate hazards. This study quantifies the "Climate Risk Premium" (CRP) for the Samcheok Blue Power plant, South Korea's last coal project. We integrate three data sources into a unified financial model: (1) Korea's National Power Supply Plan (전력수급기본계획) coal dispatch trajectories, (2) CLIMADA climate hazard data (wildfire, flood, sea level rise), and (3) Korea Investors Service (KIS) credit rating methodology. By linking dispatch reductions and climate hazards directly to cash flows and financing costs, we show that Korea's official 10th Power Supply Plan alone reduces NPV by 53\% ($4.8 billion loss), while combined transition and CLIMADA physical risks trigger a "credit rating death spiral" that increases debt spreads by 5,900 basis points, rendering the project economically unviable. These findings provide quantitative evidence for stranded asset risks in Korean coal infrastructure and highlight the urgent need for just transition finance mechanisms.
+As the global energy transition accelerates, coal-fired power assets face increasing stranded asset risks from both policy constraints and physical climate hazards. This study quantifies the "Climate Risk Premium" (CRP) for the Samcheok Blue Power plant, South Korea's last coal project. We integrate three data sources into a unified financial model: (1) Korea's National Power Supply Plan (전력수급기본계획) coal dispatch trajectories, (2) CLIMADA climate hazard data (wildfire, flood, sea level rise), and (3) Korea Investors Service (KIS) credit rating methodology. By linking dispatch reductions and climate hazards directly to cash flows and financing costs—including realistic corporate tax (24\%) and debt service schedules—we show that Korea's official 10th Power Supply Plan alone reduces NPV to \$3.3 billion, while the draft 11th Plan reduces it to \$1.2 billion. Combined with physical risks, the project triggers a "credit rating death spiral" that increases debt spreads by 450 basis points, rendering the project economically unviable. These findings provide quantitative evidence for stranded asset risks in Korean coal infrastructure and highlight the urgent need for just transition finance mechanisms.
 \end{abstract}
 
 \begin{keyword}
@@ -64,8 +64,9 @@ where $CF_t$ is the free cash flow in year $t$, $WACC$ is the weighted average c
 
 We modify the standard cash flow function to account for climate risks:
 \begin{equation}
-    CF_t = (P_t^{elec} \cdot Q_t^{gen}) - (C_t^{fuel} + C_t^{opex} + C_t^{carbon})
+    CF_t = (EBIT_t \cdot (1 - \tau)) + Depr_t - Capex_t - \Delta WC_t
 \end{equation}
+where $\tau$ is the corporate tax rate (24\%) and $Depr_t$ is straight-line depreciation over 30 years.
 
 \subsubsection{Physical Risk Adjustments}
 Physical risks (drought, heat, wildfire) reduce the effective generation quantity $Q_t^{gen}$. We model this as a constraint on the capacity factor $\kappa$:
@@ -200,25 +201,16 @@ Table 2 summarizes the Net Present Value (NPV), credit rating migration, and Cli
 \small
 \begin{tabular}{lrrcr}
 \toprule
-Scenario & NPV (\$M) & $\Delta$ NPV & Rating & CRP (bps) \\
+Scenario & NPV (\$M) & $\Delta$ NPV & Min DSCR & CRP (bps) \\
 \midrule
-Baseline & 8,964 & - & A & 0 \\
+Baseline (10th Plan) & 3,264 & - & 0.69 & 100 \\
 \midrule
 \textit{Transition Risk Only} & & & & \\
-\quad Moderate Transition & -520 & -106\% & B & 4,960 \\
-\quad Aggressive Transition & -5,025 & -156\% & B & 7,167 \\
-\midrule
-\textit{Physical Risk Only} & & & & \\
-\quad Moderate Physical (RCP 4.5) & 8,320 & -7\% & A & 315 \\
-\quad High Physical (RCP 8.5) & 7,347 & -18\% & A & 792 \\
+\quad 11th Plan Only & 1,162 & -64\% & 0.12 & 250 \\
 \midrule
 \textit{Combined Risks} & & & & \\
-\quad Combined Moderate & -836 & -109\% & B & 5,115 \\
-\quad Combined Aggressive & -5,214 & -158\% & B & 7,259 \\
-\midrule
-\textit{Other Scenarios} & & & & \\
-\quad Low Demand & 5,687 & -37\% & BBB & 1,675 \\
-\quad Severe Drought & 3,808 & -58\% & BBB & 2,595 \\
+\quad 11th Plan + High Physical & 844 & -74\% & 0.03 & 250 \\
+\quad 11th Plan + Extreme Physical & 647 & -80\% & -0.03 & 450 \\
 \bottomrule
 \end{tabular}
 \end{table}

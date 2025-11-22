@@ -137,17 +137,28 @@ def load_korea_power_plan_scenarios(file_path: str) -> Dict[str, KoreaPowerPlanS
         description='Official government power plan trajectory with coal phase-down to 2036'
     )
 
-    # Scenario 1.5: 11th Power Plan (Assumed 20% more aggressive than 10th)
-    # Placeholder logic: Take 10th plan trajectory and reduce CF by 20%
-    official_11th_cfs = [cf * 0.80 for cf in official_cfs]
+    # Scenario 1.5: 11th Power Plan (Draft)
+    plan_11_years = df[df['scenario_type'] == 'official_11th_plan']['year'].tolist()
+    plan_11_cfs = df[df['scenario_type'] == 'official_11th_plan']['implied_cf_samcheok'].tolist()
     
-    scenarios['official_11th_plan'] = KoreaPowerPlanScenario(
-        name='official_11th_plan',
-        cf_trajectory=dict(zip(official_years, official_11th_cfs)),
-        early_retirement_year=None,
-        policy_reference='11th Basic Plan (Assumed)',
-        description='Assumed 11th Basic Plan with 20% faster coal phase-down'
-    )
+    if plan_11_years:
+        scenarios['official_11th_plan'] = KoreaPowerPlanScenario(
+            name='official_11th_plan',
+            cf_trajectory=dict(zip(plan_11_years, plan_11_cfs)),
+            early_retirement_year=None,
+            policy_reference='11th Basic Plan (Draft)',
+            description='Draft 11th Basic Plan with accelerated coal phase-down'
+        )
+    else:
+        # Fallback if CSV not updated yet (should not happen with correct data)
+        official_11th_cfs = [cf * 0.80 for cf in official_cfs]
+        scenarios['official_11th_plan'] = KoreaPowerPlanScenario(
+            name='official_11th_plan',
+            cf_trajectory=dict(zip(official_years, official_11th_cfs)),
+            early_retirement_year=None,
+            policy_reference='11th Basic Plan (Assumed)',
+            description='Assumed 11th Basic Plan with 20% faster coal phase-down'
+        )
 
     # Scenario 2: Accelerated phase-out (aggressive civil society)
     accel_df = df[df['year'] <= 2045].copy()

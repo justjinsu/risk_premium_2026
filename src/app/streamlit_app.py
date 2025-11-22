@@ -49,9 +49,21 @@ def main():
         index=0
     )
     
+    # Load CLIMADA scenarios
+    climada_file = base_dir / "data" / "raw" / "climada_hazards.csv"
+    climada_scenarios = []
+    if climada_file.exists():
+        df_climada = pd.read_csv(climada_file)
+        climada_scenarios = df_climada["scenario"].tolist()
+        # Filter out baseline if present to avoid duplicates
+        climada_scenarios = [s for s in climada_scenarios if s != "baseline"]
+
+    # Combine standard levels with CLIMADA scenarios
+    physical_options = ["Low", "Medium", "High", "Extreme"] + climada_scenarios
+    
     physical_risk = st.sidebar.selectbox(
         "Physical Risk Level",
-        ["Low", "Medium", "High", "Extreme"],
+        physical_options,
         index=0
     )
 
@@ -106,13 +118,14 @@ def main():
     metrics_df = pd.read_csv(scenario_file)
 
     # Main tabs
-    tab_profile, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab_profile, tab1, tab2, tab3, tab4, tab5, tab_methodology = st.tabs([
         "🏭 Company Profile",
         "📊 Scenario Comparison",
         "💰 Financial Metrics",
         "📈 Cash Flow Analysis",
         "🔬 Climate Risk Premium",
-        "⭐ Credit Rating Migration"
+        "⭐ Credit Rating Migration",
+        "📚 Methodology"
     ])
 
     with tab_profile:
@@ -244,7 +257,6 @@ def main():
             
             # Market Price Trajectory
             st.subheader("Power Price Trajectory")
-            import plotly.express as px
             
             price_data = []
             for name, df in cashflow_dfs.items():
@@ -269,6 +281,7 @@ def main():
             st.subheader("Annual Cash Flows")
             ts_scenario = st.selectbox("Select Scenario for Time Series", list(cashflow_dfs.keys()), key="ts")
             if ts_scenario in cashflow_dfs:
+                # Display the full cash flow dataframe with all columns
                 st.dataframe(cashflow_dfs[ts_scenario], use_container_width=True, hide_index=True)
         else:
             st.warning("No cash flow data found")
@@ -390,8 +403,6 @@ def main():
 
             # Rating migration matrix
             st.subheader("Rating by Scenario")
-
-            import plotly.graph_objects as go
 
             # Create rating heatmap
             rating_map = {"AAA": 1, "AA": 2, "A": 3, "BBB": 4, "BB": 5, "B": 6}
@@ -543,6 +554,28 @@ def main():
     - Project finance metrics (DSCR, LLCR)
     """)
 
+
+    with tab_methodology:
+        st.subheader("Methodology & Assumptions")
+        st.markdown("""
+        ### Financial Model Specification
+        The model calculates **Free Cash Flow to Firm (FCFF)** using a bottom-up approach:
+        
+        $$
+        FCFF = EBIT \\times (1 - \\tau) + Depreciation - Capex
+        $$
+        
+        **Key Assumptions:**
+        -   **Corporate Tax Rate ($\\tau$)**: 24% (Standard Korean rate)
+        -   **Depreciation**: Straight-line over 30 years (Useful life)
+        -   **Debt Service**: Level annuity payments (Principal + Interest)
+        -   **Discount Rate (WACC)**: 8% (Baseline)
+        
+        ### Data Sources
+        1.  **Power Plan**: Official 10th Basic Plan & Draft 11th Basic Plan trajectories.
+        2.  **Physical Risk**: CLIMADA hazard data (Wildfire, Flood, SLR) specific to Samcheok.
+        3.  **Credit Rating**: KIS Methodology mapping DSCR to credit spreads.
+        """)
 
 if __name__ == "__main__":
     main()

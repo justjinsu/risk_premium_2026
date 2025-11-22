@@ -26,3 +26,24 @@ year,total_coal_twh,total_demand_twh,coal_share_pct,implied_cf_samcheok,scenario
 2048,18.0,848.0,2.12,0.050,phase_out,Final phase,Emergency backup only
 2049,12.0,854.0,1.41,0.032,phase_out,Near-complete phase-out,Minimal capacity retained
 2050,8.0,860.0,0.93,0.020,carbon_neutrality,Net-zero 2050 target,Carbon neutrality achieved
+2024,195.0,600.0,32.50,0.650,official_11th_plan,11th Basic Plan (Draft),Baseline year
+2025,180.0,615.0,29.27,0.580,official_11th_plan,11th Basic Plan (Draft),Accelerated start
+2026,170.0,625.0,27.20,0.550,official_11th_plan,11th Basic Plan (Draft),Interpolated
+2027,160.0,640.0,25.00,0.520,official_11th_plan,11th Basic Plan (Draft),Interpolated
+2028,150.0,655.0,22.90,0.490,official_11th_plan,11th Basic Plan (Draft),Interpolated
+2029,135.0,665.0,20.30,0.450,official_11th_plan,11th Basic Plan (Draft),Pre-NDC acceleration
+2030,120.0,675.0,17.78,0.400,official_11th_plan,11th Basic Plan (Draft),NDC 2030 Target (Strengthened)
+2031,110.0,685.0,16.06,0.370,official_11th_plan,11th Basic Plan (Draft),Interpolated
+2032,100.0,695.0,14.39,0.340,official_11th_plan,11th Basic Plan (Draft),Interpolated
+2033,90.0,702.5,12.81,0.310,official_11th_plan,11th Basic Plan (Draft),Interpolated
+2034,80.0,710.0,11.27,0.280,official_11th_plan,11th Basic Plan (Draft),Interpolated
+2035,70.0,722.5,9.69,0.250,official_11th_plan,11th Basic Plan (Draft),Interpolated
+2036,60.0,735.0,8.16,0.220,official_11th_plan,11th Basic Plan (Draft),Plan Endpoint
+2037,50.0,747.5,6.69,0.190,official_11th_plan,11th Basic Plan (Draft),Extrapolated
+2038,40.0,755.0,5.30,0.160,official_11th_plan,11th Basic Plan (Draft),Extrapolated
+2039,30.0,767.5,3.91,0.130,official_11th_plan,11th Basic Plan (Draft),Extrapolated
+2040,20.0,780.0,2.56,0.100,official_11th_plan,11th Basic Plan (Draft),Extrapolated
+2041,15.0,790.0,1.90,0.080,official_11th_plan,11th Basic Plan (Draft),Extrapolated
+2042,10.0,800.0,1.25,0.060,official_11th_plan,11th Basic Plan (Draft),Extrapolated
+2043,5.0,805.0,0.62,0.040,official_11th_plan,11th Basic Plan (Draft),Extrapolated
+2044,0.0,812.5,0.00,0.000,official_11th_plan,11th Basic Plan (Draft),Phase-out Complete

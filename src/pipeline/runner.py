@@ -20,6 +20,7 @@ from src.risk import (
 from src.financials import compute_cashflows_timeseries, calculate_metrics, CashFlowTimeSeries, FinancialMetrics
 from src.scenarios.korea_power_plan import load_korea_power_plan_scenarios
 from src.risk.physical import get_physical_risk_scenario
+from src.climada.hazards import load_climada_hazards, CLIMADAHazardData
 
 
 @dataclass
@@ -41,6 +42,7 @@ class CRPModelRunner:
         self.base_dir = Path(base_dir)
         self.dataset = load_inputs(self.base_dir)
         self.power_plans = load_korea_power_plan_scenarios(self.base_dir / "data/raw/korea_power_plan.csv")
+        self.climada_hazards = load_climada_hazards(self.base_dir / "data/raw/climada_hazards.csv")
 
     def _get_plant_params(self) -> Dict[str, Any]:
         """Extract plant parameters as a flat dict."""
@@ -73,8 +75,12 @@ class CRPModelRunner:
             carbon_price_2050=float(row.get('carbon_price_2050', 0)),
         )
 
-    def _load_physical_scenario(self, scenario_name: str) -> PhysicalScenario:
-        """Load physical scenario from CSV."""
+    def _load_physical_scenario(self, scenario_name: str) -> PhysicalScenario | CLIMADAHazardData:
+        """Load physical scenario from CSV or CLIMADA data."""
+        # Check CLIMADA first
+        if scenario_name in self.climada_hazards:
+            return self.climada_hazards[scenario_name]
+
         # Override for specific hardcoded scenarios if not in CSV
         if scenario_name == "severe_drought":
             # Force 50% water availability
@@ -126,7 +132,7 @@ class CRPModelRunner:
         plant_params = self._get_plant_params()
 
         transition_scenario = self._load_transition_scenario(transition_scenario_name)
-        physical_scenario = self._load_physical_scenario(physical_scenario_name)
+        physical_data = self._load_physical_scenario(physical_scenario_name)
         market_scenario = self._load_market_scenario(market_scenario_name)
 
         # Load Korea Power Plan if specified
@@ -139,7 +145,14 @@ class CRPModelRunner:
             transition_scenario,
             korea_plan_scenario=korea_plan
         )
-        physical_adj = apply_physical(plant_params, physical_scenario)
+        
+        # Handle CLIMADA vs Standard Physical Scenario
+        if isinstance(physical_data, CLIMADAHazardData):
+            # Create a dummy base scenario for the signature, but pass climada_hazard
+            dummy_scenario = PhysicalScenario("CLIMADA", 0, 0, 0)
+            physical_adj = apply_physical(plant_params, dummy_scenario, climada_hazard=physical_data)
+        else:
+            physical_adj = apply_physical(plant_params, physical_data)
 
         cashflow = compute_cashflows_timeseries(
             plant_params,

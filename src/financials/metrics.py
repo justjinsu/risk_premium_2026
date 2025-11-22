@@ -110,9 +110,23 @@ def calculate_metrics(
     # Only calculate for years where debt is outstanding
     n_debt_years = min(debt_tenor, len(cashflows.ebitda))
     dscr = np.zeros(n_debt_years)
+    
+    # Use Tax-Adjusted Cash Flow Available for Debt Service (CFADS)
+    # CFADS = EBITDA - Tax (paid) - Capex + Working Capital Changes
+    # For simplicity, often DSCR uses EBITDA / Debt Service in early stage models,
+    # but since we now have tax, we should be more precise:
+    # CFADS = Net Income + Depreciation + Interest + Amortization - Capex - Tax
+    # Wait, Net Income = EBIT - Interest - Tax.
+    # So Net Income + Interest + Depreciation = EBITDA - Tax.
+    # So CFADS = EBITDA - Tax.
+    
+    # Calculate Tax from cashflows if available, else 0
+    tax_paid = getattr(cashflows, 'tax_expense', np.zeros(len(cashflows.ebitda)))
+    cfads = cashflows.ebitda - tax_paid - cashflows.capex
+    
     for i in range(n_debt_years):
         if debt_struct.annual_debt_service > 0:
-            dscr[i] = cashflows.ebitda[i] / debt_struct.annual_debt_service
+            dscr[i] = cfads[i] / debt_struct.annual_debt_service
         else:
             dscr[i] = np.inf
 
@@ -121,7 +135,8 @@ def calculate_metrics(
 
     # LLCR (Loan Life Coverage Ratio) = NPV of cash flows during loan life / Debt outstanding
     # NPV of available cash flows for debt service over loan life
-    cash_available = cashflows.ebitda[:n_debt_years]
+    # CFADS for LLCR
+    cash_available = cfads[:n_debt_years]
     llcr_numerator = npf.npv(debt_interest, cash_available)
     llcr = llcr_numerator / debt_struct.debt_amount if debt_struct.debt_amount > 0 else 0.0
 

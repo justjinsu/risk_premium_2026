@@ -9,6 +9,11 @@ import numpy as np
 
 from src.risk import TransitionAdjustments, PhysicalAdjustments
 from src.scenarios import TransitionScenario, MarketScenario
+# Import locally to avoid circular import if possible, or refactor. 
+# metrics.py imports cashflow.py, so importing metrics here causes circular import.
+# We should move calculate_debt_service to a separate module or implement simple logic here.
+# Let's implement simple debt logic here to avoid circular dependency.
+import numpy_financial as npf
 
 
 @dataclass
@@ -23,6 +28,11 @@ class CashFlowTimeSeries:
     outage_costs: np.ndarray
     total_costs: np.ndarray
     ebitda: np.ndarray
+    depreciation: np.ndarray
+    ebit: np.ndarray
+    interest_expense: np.ndarray
+    tax_expense: np.ndarray
+    net_income: np.ndarray
     capex: np.ndarray
     free_cash_flow: np.ndarray
     capacity_factor: np.ndarray
@@ -38,7 +48,13 @@ class CashFlowTimeSeries:
             "carbon_costs": self.carbon_costs.tolist(),
             "outage_costs": self.outage_costs.tolist(),
             "total_costs": self.total_costs.tolist(),
+            "total_costs": self.total_costs.tolist(),
             "ebitda": self.ebitda.tolist(),
+            "depreciation": self.depreciation.tolist(),
+            "ebit": self.ebit.tolist(),
+            "interest_expense": self.interest_expense.tolist(),
+            "tax_expense": self.tax_expense.tolist(),
+            "net_income": self.net_income.tolist(),
             "capex": self.capex.tolist(),
             "free_cash_flow": self.free_cash_flow.tolist(),
             "capacity_factor": self.capacity_factor.tolist(),
@@ -64,6 +80,14 @@ def compute_cashflows_timeseries(
     fixed_opex_per_kw = float(plant_params.get("fixed_opex_per_kw_year", 42))
     variable_opex_per_mwh = float(plant_params.get("variable_opex_per_mwh", 4.5))
     emissions_rate = float(plant_params.get("emissions_tCO2_per_mwh", 0.95))
+    
+    # Financial params for concretization
+    total_capex = float(plant_params.get("total_capex_million", 3200)) * 1e6
+    useful_life = int(plant_params.get("useful_life", 30))
+    tax_rate = float(plant_params.get("tax_rate", 0.24)) # Korean Corporate Tax ~24%
+    debt_fraction = float(plant_params.get("debt_fraction", 0.70))
+    debt_interest = float(plant_params.get("debt_interest_rate", 0.05))
+    debt_tenor = int(plant_params.get("debt_tenor_years", 20))
 
     # Operating years
     n_years = transition_adj.operating_years
@@ -116,14 +140,70 @@ def compute_cashflows_timeseries(
 
     total_costs = fuel_costs + variable_opex + fixed_opex + carbon_costs + outage_costs
 
-    # EBITDA
+    # --- Financial Calculations ---
+
+    # 1. EBITDA Calculation
+    # EBITDA = Revenue - Total Costs (Fuel + O&M + Carbon + Outage)
     ebitda = revenue - total_costs
 
+    # 2. Depreciation (Non-cash expense)
+    # Straight-line depreciation over useful life
+    # Assumption: Capex is fully depreciable, no salvage value
+    annual_depreciation = total_capex / useful_life
+    depreciation = np.full(n_years, annual_depreciation)
+    
+    # 3. EBIT (Earnings Before Interest and Taxes)
+    # EBIT = EBITDA - Depreciation
+    ebit = ebitda - depreciation
+    
+    # 4. Debt Service (Interest & Principal)
+    # Calculate amortization schedule for the debt portion
+    debt_amount = total_capex * debt_fraction
+    interest_expense = np.zeros(n_years)
+    balance = debt_amount
+    
+    if debt_interest > 0 and debt_tenor > 0:
+        # Calculate level annual payment (Annuity)
+        annual_ds = -npf.pmt(debt_interest, debt_tenor, debt_amount)
+        
+        for i in range(min(n_years, debt_tenor)):
+            # Interest component
+            interest = balance * debt_interest
+            # Principal component
+            principal = annual_ds - interest
+            
+            interest_expense[i] = interest
+            
+            # Update balance
+            balance -= principal
+            if balance < 0: balance = 0
+
+    # 5. Tax Calculation
+    # Corporate Tax is applied to Earnings Before Tax (EBT)
+    # EBT = EBIT - Interest Expense
+    # Tax Shield: Interest expense reduces taxable income
+    taxable_income = ebit - interest_expense
+    # Tax cannot be negative (no carry-forward modeled for simplicity)
+    tax_expense = np.maximum(0.0, taxable_income * tax_rate)
+    
+    # 6. Net Income
+    # Net Income = EBT - Tax
+    net_income = ebit - interest_expense - tax_expense
+
+    # 7. Free Cash Flow (FCFF - Free Cash Flow to Firm)
+    # FCFF represents cash available to all capital providers (Debt + Equity)
+    # Formula: FCFF = EBIT * (1 - Tax Rate) + Depreciation - Capex - Change in WC
+    # Note: Interest tax shield is captured in WACC for NPV, so we use EBIT*(1-t)
+    # However, for consistency with the previous model which might have used a different definition,
+    # let's stick to the standard FCFF definition:
+    # FCFF = NOPAT + Depreciation - Capex
+    # NOPAT = EBIT * (1 - Tax Rate)
+    nopat = ebit * (1 - tax_rate)
+    
     # Capex (sustaining capex only, construction already completed)
     capex = np.zeros(n_years)
-
-    # Free cash flow
-    fcf = ebitda - capex
+    
+    fcf = nopat + depreciation - capex
 
     return CashFlowTimeSeries(
         years=years,
@@ -135,6 +215,11 @@ def compute_cashflows_timeseries(
         outage_costs=outage_costs,
         total_costs=total_costs,
         ebitda=ebitda,
+        depreciation=depreciation,
+        ebit=ebit,
+        interest_expense=interest_expense,
+        tax_expense=tax_expense,
+        net_income=net_income,
         capex=capex,
         free_cash_flow=fcf,
         capacity_factor=cf_series,
