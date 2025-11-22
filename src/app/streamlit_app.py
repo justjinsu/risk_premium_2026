@@ -7,6 +7,19 @@ from __future__ import annotations
 from pathlib import Path
 import sys
 
+import plotly.express as px
+import plotly.graph_objects as go
+
+# Professional Color Palette
+COLORS = {
+    "Baseline": "#2c3e50",
+    "Transition": "#e74c3c",
+    "Physical": "#f39c12",
+    "Combined": "#c0392b",
+    "Positive": "#27ae60",
+    "Negative": "#c0392b",
+    "Neutral": "#95a5a6"
+}
 import pandas as pd
 import streamlit as st
 
@@ -271,11 +284,84 @@ def main():
                 st.plotly_chart(fig_price, use_container_width=True)
 
             # Waterfall chart
-            st.subheader("Cash Flow Breakdown")
-            waterfall_scenario = st.selectbox("Select Scenario for Waterfall", list(cashflow_dfs.keys()))
-            if waterfall_scenario in cashflow_dfs:
-                fig_wf = plot_cashflow_waterfall(cashflow_dfs[waterfall_scenario], waterfall_scenario)
-                st.plotly_chart(fig_wf, use_container_width=True)
+            st.subheader("Net Present Value (NPV) Impact")
+            
+            # Prepare data for plotting
+            scenarios = list(results.keys())
+            npvs = [res.metrics.npv / 1e6 for res in results.values()]
+            
+            # Assign colors based on scenario name
+            bar_colors = []
+            for s in scenarios:
+                if "baseline" in s: bar_colors.append(COLORS["Baseline"])
+                elif "physical" in s and "transition" not in s: bar_colors.append(COLORS["Physical"])
+                elif "transition" in s and "physical" not in s: bar_colors.append(COLORS["Transition"])
+                else: bar_colors.append(COLORS["Combined"])
+
+            fig_npv = go.Figure(data=[
+                go.Bar(
+                    x=scenarios, 
+                    y=npvs,
+                    marker_color=bar_colors,
+                    text=[f"${x:,.0f}M" for x in npvs],
+                    textposition='auto',
+                )
+            ])
+            
+            fig_npv.update_layout(
+                title="Project NPV by Scenario",
+                yaxis_title="NPV (Million USD)",
+                template="plotly_white",
+                height=500,
+                xaxis_tickangle=-15
+            )
+            st.plotly_chart(fig_npv, use_container_width=True)
+
+            # Cash Flow Projection Chart
+            st.subheader("Cash Flow Projection")
+            selected_scenario_cf = st.selectbox("Select Scenario for Cash Flow Projection", list(cashflow_dfs.keys()), key="cf_proj")
+            if selected_scenario_cf in cashflow_dfs:
+                cf_df = cashflow_dfs[selected_scenario_cf]
+                
+                # Plot Cash Flow
+                fig_cf = go.Figure()
+                
+                # Free Cash Flow Line
+                fig_cf.add_trace(go.Scatter(
+                    x=cf_df["year"],
+                    y=cf_df["free_cash_flow"] / 1e6,
+                    name="Free Cash Flow",
+                    line=dict(color=COLORS["Positive"], width=3),
+                    mode='lines+markers'
+                ))
+                
+                # EBITDA Bar
+                fig_cf.add_trace(go.Bar(
+                    x=cf_df["year"],
+                    y=cf_df["ebitda"] / 1e6,
+                    name="EBITDA",
+                    marker_color=COLORS["Baseline"],
+                    opacity=0.3
+                ))
+                
+                # Net Income Bar
+                fig_cf.add_trace(go.Bar(
+                    x=cf_df["year"],
+                    y=cf_df["net_income"] / 1e6,
+                    name="Net Income",
+                    marker_color=COLORS["Neutral"],
+                    opacity=0.5
+                ))
+                
+                fig_cf.update_layout(
+                    title=f"Cash Flow Projection: {selected_scenario_cf}",
+                    xaxis_title="Year",
+                    yaxis_title="USD Million",
+                    template="plotly_white",
+                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                    hovermode="x unified"
+                )
+                st.plotly_chart(fig_cf, use_container_width=True)
 
             # Time series table
             st.subheader("Annual Cash Flows")
