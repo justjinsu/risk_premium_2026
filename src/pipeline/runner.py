@@ -14,7 +14,6 @@ from src.scenarios import TransitionScenario, PhysicalScenario, MarketScenario
 from src.risk import (
     apply_transition, apply_physical, map_expected_loss_to_spreads, calculate_expected_loss, FinancingImpact,
     assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment,
-    assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment,
     calculate_financing_from_rating
 )
 from src.financials import compute_cashflows_timeseries, calculate_metrics, CashFlowTimeSeries, FinancialMetrics

@@ -93,14 +93,19 @@ def calculate_metrics(
     debt_interest = float(plant_params.get("debt_interest_rate", 0.05))
     debt_tenor = int(plant_params.get("debt_tenor_years", 20))
 
-    # NPV of free cash flows
+    # Free cash flows from operations
     fcf = cashflows.free_cash_flow
-    npv = npf.npv(discount_rate, fcf)
 
-    # IRR
+    # NPV of free cash flows minus initial investment
+    # npf.npv discounts from period 1, so we add FCFs discounted and subtract initial investment
+    npv = npf.npv(discount_rate, fcf) - total_capex
+
+    # IRR calculation requires initial investment (negative) at t=0
+    # Create cash flow array: [-CAPEX, FCF_1, FCF_2, ..., FCF_n]
+    fcf_with_investment = np.concatenate([[-total_capex], fcf])
     try:
-        irr = npf.irr(fcf)
-    except:
+        irr = npf.irr(fcf_with_investment)
+    except Exception:
         irr = np.nan
 
     # Debt service calculations
@@ -140,10 +145,12 @@ def calculate_metrics(
     llcr_numerator = npf.npv(debt_interest, cash_available)
     llcr = llcr_numerator / debt_struct.debt_amount if debt_struct.debt_amount > 0 else 0.0
 
-    # Payback period
-    cumulative_fcf = np.cumsum(fcf)
-    payback_idx = np.where(cumulative_fcf > 0)[0]
-    payback_years = payback_idx[0] + 1 if len(payback_idx) > 0 else None
+    # Payback period (using FCF including initial investment)
+    cumulative_fcf = np.cumsum(fcf_with_investment)
+    # Find where cumulative FCF becomes positive (recovers initial investment)
+    payback_idx = np.where(cumulative_fcf >= 0)[0]
+    # Year 0 is investment year, so payback years is the index directly
+    payback_years = float(payback_idx[0]) if len(payback_idx) > 0 else None
 
     return FinancialMetrics(
         npv=npv,

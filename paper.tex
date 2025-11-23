@@ -24,7 +24,7 @@
 \cortext[cor1]{Corresponding author}
 
 \begin{abstract}
-As the global energy transition accelerates, coal-fired power assets face increasing stranded asset risks from both policy constraints and physical climate hazards. This study quantifies the "Climate Risk Premium" (CRP) for the Samcheok Blue Power plant, South Korea's last coal project. We integrate three data sources into a unified financial model: (1) Korea's National Power Supply Plan (전력수급기본계획) coal dispatch trajectories, (2) CLIMADA climate hazard data (wildfire, flood, sea level rise), and (3) Korea Investors Service (KIS) credit rating methodology. By linking dispatch reductions and climate hazards directly to cash flows and financing costs—including realistic corporate tax (24\%) and debt service schedules—we show that Korea's official 10th Power Supply Plan alone reduces NPV to \$3.3 billion, while the draft 11th Plan reduces it to \$1.2 billion. Combined with physical risks, the project triggers a "credit rating death spiral" that increases debt spreads by 450 basis points, rendering the project economically unviable. These findings provide quantitative evidence for stranded asset risks in Korean coal infrastructure and highlight the urgent need for just transition finance mechanisms.
+As the global energy transition accelerates, coal-fired power assets face increasing stranded asset risks from both policy constraints and physical climate hazards. This study quantifies the "Climate Risk Premium" (CRP) for the Samcheok Blue Power plant, South Korea's last coal project. We integrate three data sources into a unified financial model: (1) Korea's National Power Supply Plan coal dispatch trajectories, (2) CLIMADA climate hazard data (wildfire, flood, sea level rise), and (3) Korea Investors Service (KIS) credit rating methodology. By linking dispatch reductions and climate hazards directly to cash flows and financing costs—including realistic corporate tax (24\%) and debt service schedules—we show that transition scenarios reduce the baseline NPV of \$2.9 billion by 251-375\%, while physical climate risks reduce NPV by 33-59\%. Combined transition and physical risks trigger a "credit rating death spiral" that increases the Climate Risk Premium by up to 5,854 basis points, rendering the project economically unviable. These findings provide quantitative evidence for stranded asset risks in Korean coal infrastructure and highlight the urgent need for just transition finance mechanisms.
 \end{abstract}
 
 \begin{keyword}
@@ -45,7 +45,7 @@ Traditional financial models often underestimate climate risks by treating them 
 This paper proposes an integrated framework that links transition and physical risks directly to financial performance and, crucially, to the cost of capital. We make three key contributions:
 
 \begin{enumerate}
-    \item \textbf{Korea Power Supply Plan Integration}: We incorporate official government coal dispatch trajectories from the 10th Power Supply Plan (전력수급기본계획), translating national policy into plant-level capacity factor reductions and revenue impacts.
+    \item \textbf{Korea Power Supply Plan Integration}: We incorporate official government coal dispatch trajectories from the 10th Power Supply Plan, translating national policy into plant-level capacity factor reductions and revenue impacts.
 
     \item \textbf{CLIMADA Physical Risk Quantification}: We apply CLIMADA (Climate Adaptation Platform) hazard data to quantify wildfire, flood, and sea level rise impacts on the Samcheok plant, moving beyond generic physical risk assumptions to location-specific climate science.
 
@@ -101,7 +101,7 @@ The cost of debt is then:
 
 As climate risks reduce $CF_t$, $DSCR_t$ falls. If it breaches critical thresholds (e.g., 1.2x), the rating $R_t$ downgrades, causing $\text{Spread}(R_t)$ to spike. This increases interest expense, further lowering $DSCR_t$—a feedback loop we term the "Credit Rating Death Spiral."
 
-\section{Methodology & Data}
+\section{Methodology \& Data}
 
 \subsection{Plant Specifications}
 The analysis is based on public specifications of the Samcheok Blue Power plant:
@@ -117,7 +117,6 @@ The analysis is based on public specifications of the Samcheok Blue Power plant:
 
 \subsection{Data Sources}
 
-\subsubsection{Korea National Power Supply Plan (전력수급기본계획)}
 We obtain coal dispatch trajectories from the Ministry of Trade, Industry and Energy's 10th Basic Plan for Electricity Supply and Demand (2023-2036):
 
 \begin{itemize}
@@ -194,6 +193,13 @@ This design isolates the marginal contribution of each risk source (policy dispa
 \subsection{Financial Impact of Climate Risks}
 
 Table 2 summarizes the Net Present Value (NPV), credit rating migration, and Climate Risk Premium across nine scenarios.
+ 
+ \begin{figure}[h]
+     \centering
+     \includegraphics[width=1.0\textwidth]{data/processed/figures/fig1_npv_comparison.png}
+     \caption{Impact of Policy and Physical Risks on Project NPV. Transition risks (red) drive deep negative value, while physical risks (orange) erode value further.}
+     \label{fig:npv_comparison}
+ \end{figure}
 
 \begin{table}[h]
 \centering
@@ -203,21 +209,26 @@ Table 2 summarizes the Net Present Value (NPV), credit rating migration, and Cli
 \toprule
 Scenario & NPV (\$M) & $\Delta$ NPV & Min DSCR & CRP (bps) \\
 \midrule
-Baseline (10th Plan) & 3,264 & - & 0.69 & 100 \\
+Baseline (No constraints) & 2,898 & - & 1.81 & - \\
 \midrule
 \textit{Transition Risk Only} & & & & \\
-\quad 11th Plan Only & 1,162 & -64\% & 0.12 & 250 \\
+\quad Moderate Transition & -4,381 & -251\% & -1.39 & 3,880 \\
+\quad Aggressive Transition & -7,964 & -375\% & -4.37 & 5,635 \\
+\midrule
+\textit{Physical Risk Only} & & & & \\
+\quad Moderate Physical & 1,928 & -33\% & 1.58 & 475 \\
+\quad High Physical & 1,189 & -59\% & 1.42 & 837 \\
 \midrule
 \textit{Combined Risks} & & & & \\
-\quad 11th Plan + High Physical & 844 & -74\% & 0.03 & 250 \\
-\quad 11th Plan + Extreme Physical & 647 & -80\% & -0.03 & 450 \\
+\quad Combined Moderate & -5,042 & -274\% & -1.60 & 4,204 \\
+\quad Combined Aggressive & -8,411 & -390\% & -4.32 & 5,854 \\
 \bottomrule
 \end{tabular}
 \end{table}
 
 \subsubsection{Korea Power Plan Dominates Transition Risk}
 
-The most striking finding is that \textit{transition risk dominates physical risk by a factor of 5-6×}. Moderate transition scenarios (based on Korea's official 10th Power Supply Plan) reduce NPV by 106\%, while high physical climate risks (RCP 8.5) reduce NPV by only 18\%. This disparity demonstrates that \textbf{government policy—not climate change itself—is the primary driver of coal asset stranding in Korea}.
+The most striking finding is that \textit{transition risk dominates physical risk by a factor of 4-6×}. Moderate transition scenarios (based on Korea's power supply plan trajectory) reduce NPV by 251\%, while high physical climate risks (RCP 8.5) reduce NPV by 59\%. This disparity demonstrates that \textbf{government policy—not climate change itself—is the primary driver of coal asset stranding in Korea}.
 
 The mechanism is clear: Korea's 10th Power Supply Plan mandates coal dispatch reductions from 195 TWh (2024) to 130 TWh (2030 NDC target) to 95 TWh (2036). For Samcheok, this translates to capacity factor declines from 60\% (2024) to 45\% (2030) to 32\% (2036) to <10\% by 2045. Revenue collapses proportionally, while fixed costs remain constant, squeezing EBITDA margins and triggering debt service coverage ratio violations.
 
@@ -233,22 +244,29 @@ Physical climate risks, while smaller in magnitude than policy risks, are noneth
     \item \textbf{Sea Level Rise}: Cooling water intake at 5m elevation faces 3\% capacity derating by 2050 under RCP 8.5 (+0.45m SLR) due to reduced hydraulic head and amplified storm surge vulnerability.
 \end{itemize}
 
-Combined, CLIMADA hazards reduce effective capacity factor by 5.85\% (RCP 8.5, 2050), translating to \$1.1 billion NPV loss and 792 bps CRP increase. While less severe than policy impacts, these risks are \textit{unavoidable} (adaptation costly, relocation impossible) and \textit{permanent} (sea level rise irreversible on human timescales).
+Combined, CLIMADA hazards reduce effective capacity factor by 5.85\% (RCP 8.5, 2050), translating to \$1.7 billion NPV loss and 837 bps CRP increase under high physical risk scenarios. While less severe than policy impacts, these risks are \textit{unavoidable} (adaptation costly, relocation impossible) and \textit{permanent} (sea level rise irreversible on human timescales).
+
+ \begin{figure}[h]
+     \centering
+     \includegraphics[width=1.0\textwidth]{data/processed/figures/fig2_waterfall.png}
+     \caption{Lifetime Cash Flow Waterfall (11th Plan + Extreme Physical Risk). Revenue is decimated by policy constraints, while fixed costs and financial obligations remain, resulting in negative Net Income.}
+     \label{fig:waterfall}
+ \end{figure}
 
 \subsection{The Credit Rating Death Spiral}
 
 \subsubsection{Investment Grade Loss at Policy-Driven Thresholds}
 
-A critical non-linearity emerges at the investment grade boundary. All transition scenarios (moderate, aggressive, combined) trigger rating downgrades from A (150 bps spread) to B (600 bps spread), while physical-only scenarios maintain investment grade (A or BBB).
+A critical non-linearity emerges at the investment grade boundary. All transition scenarios (moderate, aggressive, combined) trigger rating downgrades from investment grade (A/BBB) to non-investment grade (BB/B), while physical-only scenarios maintain investment grade.
 
-The threshold metric is EBITDA/Interest Expense coverage:
+The threshold metric is Debt Service Coverage Ratio (DSCR):
 \begin{itemize}
-    \item \textbf{Baseline}: 3.85× (A rating, safe)
-    \item \textbf{Moderate Transition}: -1.60× (B rating, \textit{negative} EBITDA, cannot service debt)
-    \item \textbf{High Physical}: 3.19× (A rating maintained)
+    \item \textbf{Baseline}: 1.81× (Investment grade, debt serviceable)
+    \item \textbf{Moderate Transition}: -1.39× (B rating, \textit{negative} cash flow, cannot service debt)
+    \item \textbf{High Physical}: 1.42× (Investment grade maintained)
 \end{itemize}
 
-Korea Power Plan dispatch reductions drive EBITDA negative (project becomes insolvent), while CLIMADA physical risks merely reduce positive EBITDA. This categorical difference explains the rating cliff.
+Transition risk dispatch reductions drive DSCR negative (project becomes insolvent), while CLIMADA physical risks merely reduce positive DSCR. This categorical difference explains the rating cliff.
 
 \subsubsection{Feedback Loop Dynamics}
 
@@ -262,36 +280,34 @@ The credit rating death spiral operates as follows:
     \item \textbf{T=7}: EBITDA turns negative → downgrade to B (600 bps)
     \item \textbf{T=8}: Refinancing impossible at 600 bps spread; technical default
 \end{enumerate}
+ 
+ \begin{figure}[h]
+     \centering
+     \includegraphics[width=1.0\textwidth]{data/processed/figures/fig3_rating_migration.png}
+     \caption{Credit Rating Migration Paths. Policy-driven scenarios (Red/Orange) trigger rapid downgrades below Investment Grade (dotted line) by 2030, while Baseline (Blue) remains stable.}
+     \label{fig:rating_migration}
+ \end{figure}
 
 At the 600 bps spread level, debt service exceeds \textit{total revenue}, making the project mathematically unfinanceable. The non-linear jump from 150 bps (A) to 600 bps (B) represents a 300\% increase in financing costs, explaining why NPV can exceed -100\% (plant worth less than zero, creating negative value for equity holders).
 
 \subsection{Synergistic Risk Amplification}
 
-Combined scenarios exhibit \textit{superadditive} risk effects. The worst-case scenario (aggressive transition + high physical + high carbon pricing) produces:
+Combined scenarios exhibit significant risk effects. The worst-case scenario (aggressive transition + high physical) produces:
 
 \begin{itemize}
-    \item \textbf{NPV Loss}: -\$14.2 billion (158\% of baseline)
-    \item \textbf{CRP}: 7,259 bps (72.6 percentage points)
-    \item \textbf{WACC}: 6.75\% → 79.34\% (11.7× increase)
+    \item \textbf{NPV}: -\$8.4 billion (from \$2.9 billion baseline, a -390\% swing)
+    \item \textbf{CRP}: 5,854 bps (58.5 percentage points)
+    \item \textbf{DSCR}: -4.32× (deeply negative, unable to service any debt)
 \end{itemize}
 
-The combined impact (158\%) \textit{exceeds} the sum of individual risks:
+The combined impact demonstrates risk compounding:
 \begin{itemize}
-    \item Aggressive transition alone: -156\%
-    \item High physical alone: -18\%
-    \item Expected additive: -174\%
-    \item Actual combined: -158\%
+    \item Aggressive transition alone: -375\% NPV change, 5,635 bps CRP
+    \item High physical alone: -59\% NPV change, 837 bps CRP
+    \item Combined aggressive: -390\% NPV change, 5,854 bps CRP
 \end{itemize}
 
-This apparent "subadditivity" is an artifact of NPV already being deeply negative under transition risk alone; physical risks cannot further reduce a negative NPV by much. However, the CRP shows true synergy:
-\begin{itemize}
-    \item Transition CRP: 7,167 bps
-    \item Physical CRP: 792 bps
-    \item Expected additive: 7,959 bps
-    \item Actual combined: 7,259 bps (interaction term: -700 bps)
-\end{itemize}
-
-The negative interaction reflects credit rating floor effects: once rating reaches B (600 bps), further deterioration has bounded impact on spreads (cannot go below junk/default threshold without declaring bankruptcy).
+While the incremental impact of physical risks when added to transition risks appears modest (physical adds 219 bps CRP on top of transition's 5,635 bps), this reflects that transition risks already push the project into deep distress. The combined scenario confirms that climate policy creates the dominant stranding risk, with physical hazards providing additional but secondary erosion of value.
 
 \section{Discussion and Policy Implications}
 
@@ -307,7 +323,7 @@ Our most important finding is that \textbf{government policy—specifically Kore
     \item \textbf{Early retirement is financially optimal}: Waiting for "natural" economic obsolescence subjects owners to accelerating losses. Negotiated early retirement (with compensation) dominates market-driven collapse.
 \end{enumerate}
 
-The "Climate Risk Premium" embedded in Samcheok's 6-7\% bond yields suggests markets are \textit{beginning} to price policy risk, but our analysis indicates CRP should be 2,000-7,000 bps higher, implying either (a) market complacency or (b) implicit government bailout expectations.
+The "Climate Risk Premium" embedded in Samcheok's 6-7\% bond yields suggests markets are \textit{beginning} to price policy risk, but our analysis indicates CRP should be 3,000-6,000 bps higher under realistic transition scenarios, implying either (a) market complacency or (b) implicit government bailout expectations.
 
 \subsection{Physical Climate Risks Require Location-Specific Quantification}
 
@@ -390,14 +406,14 @@ Combined capital at risk: \$100+ billion. International financial institutions (
 
 \section{Conclusion}
 
-The Samcheok Blue Power plant, commissioned in 2024 as South Korea's last coal project, exemplifies the financial risks of new fossil infrastructure in a climate-constrained world. Our integrated framework—combining Korea's National Power Supply Plan (전력수급기본계획), CLIMADA physical hazard data, and KIS credit rating methodology—quantifies three key findings:
+The Samcheok Blue Power plant, commissioned in 2024 as South Korea's last coal project, exemplifies the financial risks of new fossil infrastructure in a climate-constrained world. Our integrated framework—combining Korea's National Power Supply Plan, CLIMADA physical hazard data, and KIS credit rating methodology—quantifies three key findings:
 
 \begin{enumerate}
-    \item \textbf{Policy risk dominates physical risk}: Official government dispatch reductions reduce NPV by 106\%, while CLIMADA climate hazards reduce NPV by 18\%. Government energy policy—not climate change itself—is the primary driver of coal asset stranding in Korea.
+    \item \textbf{Policy risk dominates physical risk}: Transition scenarios reduce NPV by 251-375\%, while CLIMADA climate hazards reduce NPV by 33-59\%. Government energy policy—not climate change itself—is the primary driver of coal asset stranding in Korea.
 
-    \item \textbf{Investment grade loss is inevitable}: All transition scenarios (moderate, aggressive, combined) trigger credit rating downgrades from A to B (investment grade loss), increasing debt spreads from 150 bps to 600 bps. Once EBITDA/Interest falls below 2.0×, recovery is impossible without extraordinary intervention.
+    \item \textbf{Investment grade loss is inevitable}: All transition scenarios (moderate, aggressive, combined) trigger credit rating downgrades from investment grade to non-investment grade, with DSCR falling from 1.81× to negative values. Once DSCR falls below 1.0×, recovery is impossible without extraordinary intervention.
 
-    \item \textbf{Climate Risk Premium is material and quantifiable}: The CRP ranges from 315 bps (moderate physical risk) to 7,259 bps (combined aggressive scenario), making projects economically unviable. Samcheok's current 6-7\% bond yields suggest markets are beginning to price policy risk but remain complacent about downside scenarios.
+    \item \textbf{Climate Risk Premium is material and quantifiable}: The CRP ranges from 475 bps (moderate physical risk) to 5,854 bps (combined aggressive scenario), making projects economically unviable. Samcheok's current 6-7\% bond yields suggest markets are beginning to price policy risk but remain complacent about downside scenarios.
 \end{enumerate}
 
 These findings have urgent policy implications. Market forces \textit{will} accelerate coal plant closures faster than policy mandates, but disorderly exits pose financial stability risks. Structured "Just Transition Finance" mechanisms—early retirement contracts, transition bonds, refinancing facilities—can allocate costs fairly while achieving decarbonization targets. The alternative—chaotic defaults, job losses, community disruption—is economically and socially costlier.

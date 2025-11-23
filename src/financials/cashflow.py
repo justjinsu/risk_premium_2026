@@ -48,7 +48,6 @@ class CashFlowTimeSeries:
             "carbon_costs": self.carbon_costs.tolist(),
             "outage_costs": self.outage_costs.tolist(),
             "total_costs": self.total_costs.tolist(),
-            "total_costs": self.total_costs.tolist(),
             "ebitda": self.ebitda.tolist(),
             "depreciation": self.depreciation.tolist(),
             "ebit": self.ebit.tolist(),

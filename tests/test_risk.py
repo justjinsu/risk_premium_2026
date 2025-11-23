@@ -37,8 +37,9 @@ def test_transition_adjustments(plant_params):
     # Operating years should be capped
     assert adj.operating_years == 25
 
-    # Carbon price should be set
-    assert adj.carbon_price == 50  # 2025 price
+    # Carbon price is now accessed from scenario directly, not stored in adjustments
+    # Test that scenario provides correct carbon price
+    assert scenario.get_carbon_price(2025) == 50
 
 
 def test_physical_adjustments(plant_params):
