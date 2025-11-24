@@ -6,6 +6,12 @@
 \usepackage{graphicx}
 \usepackage{hyperref}
 \usepackage{geometry}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{threeparttable}
+\usepackage[utf8]{inputenc}
 \geometry{a4paper, margin=1in}
 
 \journal{Energy Policy}
@@ -17,14 +23,14 @@
 \title{Quantifying the Climate Risk Premium: A Case Study of the Samcheok Blue Power Plant in South Korea}
 
 \author[1]{Jinsu Park\corref{cor1}}
-\ead{jinsu.park@example.com}
+\ead{jinsu@planit.institute}
 
-\address[1]{Department of Energy Policy, Seoul National University, Seoul, South Korea}
+\address[1]{PLANiT Institute, Seoul, South Korea}
 
 \cortext[cor1]{Corresponding author}
 
 \begin{abstract}
-As the global energy transition accelerates, coal-fired power assets face increasing stranded asset risks from both policy constraints and physical climate hazards. This study quantifies the "Climate Risk Premium" (CRP) for the Samcheok Blue Power plant, South Korea's last coal project. We integrate three data sources into a unified financial model: (1) Korea's National Power Supply Plan coal dispatch trajectories, (2) CLIMADA climate hazard data (wildfire, flood, sea level rise), and (3) Korea Investors Service (KIS) credit rating methodology. By linking dispatch reductions and climate hazards directly to cash flows and financing costs—including realistic corporate tax (24\%) and debt service schedules—we show that transition scenarios reduce the baseline NPV of \$2.9 billion by 251-375\%, while physical climate risks reduce NPV by 33-59\%. Combined transition and physical risks trigger a "credit rating death spiral" that increases the Climate Risk Premium by up to 5,854 basis points, rendering the project economically unviable. These findings provide quantitative evidence for stranded asset risks in Korean coal infrastructure and highlight the urgent need for just transition finance mechanisms.
+As the global energy transition accelerates, coal-fired power assets face increasing stranded asset risks from both policy constraints and physical climate hazards. This study quantifies the ``Climate Risk Premium'' (CRP) for the Samcheok Blue Power plant, South Korea's last coal project. We integrate three data sources into a unified financial model: (1) Korea's 10th National Power Supply Plan coal dispatch trajectories (2024-2036), (2) CLIMADA climate hazard data for wildfire (Fire Weather Index), flood (GLOFAS), and sea level rise (IPCC AR6), and (3) Korea Investors Service (KIS) credit rating methodology with six quantitative metrics. By linking dispatch reductions and climate hazards directly to cash flows and financing costs---including corporate tax (24\%), straight-line depreciation, and debt service schedules---we demonstrate that transition scenarios reduce the baseline NPV of \$2.9 billion by 251--375\%, while physical climate risks reduce NPV by 33--59\%. Combined transition and physical risks trigger a ``credit rating death spiral'' where falling Debt Service Coverage Ratios (DSCR from 1.81$\times$ to negative values) cause rating downgrades from investment grade (BBB) to speculative grade (B), increasing spreads from 250 to 600 basis points. The total Climate Risk Premium reaches 5,854 basis points under aggressive scenarios, rendering the project economically unviable. These findings demonstrate that government policy---not physical climate change---is the primary driver of coal asset stranding in Korea, and highlight the urgent need for structured just transition finance mechanisms to manage orderly coal phase-out.
 \end{abstract}
 
 \begin{keyword}
@@ -53,6 +59,7 @@ This paper proposes an integrated framework that links transition and physical r
 \end{enumerate}
 
 \section{Theoretical Framework}
+
 We develop a bottom-up valuation model that explicitly incorporates climate risk vectors into both the cash flow numerator and the discount rate denominator.
 
 \subsection{Integrated Cash Flow Model}
@@ -99,9 +106,25 @@ The cost of debt is then:
     r_d(t) = r_f + \text{Spread}(R_t) + \text{CRP}
 \end{equation}
 
-As climate risks reduce $CF_t$, $DSCR_t$ falls. If it breaches critical thresholds (e.g., 1.2x), the rating $R_t$ downgrades, causing $\text{Spread}(R_t)$ to spike. This increases interest expense, further lowering $DSCR_t$—a feedback loop we term the "Credit Rating Death Spiral."
+As climate risks reduce $CF_t$, $DSCR_t$ falls. If it breaches critical thresholds (e.g., 1.2$\times$), the rating $R_t$ downgrades, causing $\text{Spread}(R_t)$ to spike. This increases interest expense, further lowering $DSCR_t$---a feedback loop we term the ``Credit Rating Death Spiral,'' illustrated in Figure~\ref{fig:death_spiral}.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{data/processed/figures/fig5_death_spiral.png}
+    \caption{The Credit Rating Death Spiral. Climate risks reduce revenue and cash flows, which lowers DSCR and triggers credit rating downgrades. Lower ratings increase cost of debt (spread widens), which further reduces cash flows through higher interest expense---creating a self-reinforcing feedback loop. Once DSCR falls below 1.0$\times$, the project cannot service debt, leading to technical default.}
+    \label{fig:death_spiral}
+\end{figure}
 
 \section{Methodology \& Data}
+
+Our methodology integrates three independent data sources into a unified financial model, as shown in Figure~\ref{fig:data_integration}. Each data source provides distinct but complementary information: the Korea Power Supply Plan defines transition risk trajectories, CLIMADA provides spatially-explicit physical hazard data, and the KIS methodology maps financial metrics to credit ratings and spreads.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth]{data/processed/figures/fig6_data_integration.png}
+    \caption{Data Integration Framework. Three independent data sources---Korea Power Supply Plan (MOTIE), CLIMADA hazard data (ETH Zurich), and KIS credit methodology---feed into the CRP Model Integration Layer, which produces NPV, IRR, DSCR, Credit Rating, and Climate Risk Premium outputs.}
+    \label{fig:data_integration}
+\end{figure}
 
 \subsection{Plant Specifications}
 The analysis is based on public specifications of the Samcheok Blue Power plant:
@@ -128,43 +151,65 @@ We obtain coal dispatch trajectories from the Ministry of Trade, Industry and En
 
 For Samcheok specifically (2.1 GW of 42 GW total Korean coal capacity = 5\%), we allocate proportional generation and back-calculate implied capacity factors. This approach directly translates national policy into plant-level financial impacts, ensuring our analysis reflects \textit{actual government commitments} rather than hypothetical scenarios.
 
-\subsubsection{CLIMADA Physical Hazard Data}
-We apply the CLIMADA (Climate Adaptation Platform) open-source hazard modeling framework to quantify three climate risks at the Samcheok location:
+\subsubsection{Physical Hazard Data}
+We quantify three climate risks at the Samcheok location (37.44°N, 129.17°E) using data from established climate databases:
 
 \textbf{1. Wildfire Risk}
 \begin{itemize}
-    \item \textbf{Data}: Fire Weather Index (FWI) from ERA5-Land reanalysis and CMIP6 projections
-    \item \textbf{Current Climate}: FWI = 20 (1\% baseline transmission outage rate)
-    \item \textbf{RCP 8.5 (2050)}: FWI = 42 (+110\%), outage rate = 2.5\%/year
-    \item \textbf{Mechanism}: Increased wildfire frequency in mountainous transmission corridors (Samcheok is 120 km from grid through fire-prone areas, with 2022 Uljin-Samcheok mega-fire precedent)
+    \item \textbf{Data}: Fire Weather Index (FWI) from ERA5-Land reanalysis and Korean Meteorological Administration (KMA) Climate Change Assessment Report 2020
+    \item \textbf{Baseline (1991-2020)}: FWI = 18.5 (1.2\% baseline transmission outage rate)
+    \item \textbf{RCP 4.5 (2050)}: FWI = 26.2 (+42\%), outage rate = 1.7\%/year
+    \item \textbf{RCP 8.5 (2050)}: FWI = 35.8 (+94\%), outage rate = 2.2\%/year
+    \item \textbf{Mechanism}: Increased wildfire frequency in mountainous transmission corridors (Samcheok is 120 km from grid through fire-prone areas, with 2022 Uljin-Samcheok mega-fire precedent burning 213 km²)
 \end{itemize}
 
 \textbf{2. Flood Risk (Riverine + Coastal)}
 \begin{itemize}
-    \item \textbf{Data}: GLOFAS (Global Flood Awareness System) + coastal storm surge modeling
-    \item \textbf{Current Climate}: 1-in-100 year flood = 0.2\% annual outage rate
-    \item \textbf{RCP 8.5 (2050)}: Monsoon intensification + sea level rise → 0.35\% annual outage rate
-    \item \textbf{Mechanism}: Plant is 2-3 km from East Sea, cooling water intake at 5m elevation vulnerable to compound coastal+riverine flooding
+    \item \textbf{Data}: GLOFAS v3.1 (Global Flood Awareness System) reanalysis and K-water flood hazard maps for Gangwon Province
+    \item \textbf{Baseline}: 1-in-10 year flood depth = 1.8m, 1-in-100 year = 4.2m; annual outage rate = 0.14\%
+    \item \textbf{RCP 8.5 (2050)}: Monsoon intensification multiplier = 1.75$\times$; annual outage rate = 0.24\%
+    \item \textbf{Mechanism}: Plant is 2-3 km from East Sea, cooling water intake at 5m elevation, Osip Creek riverine exposure creates compound flood risk
 \end{itemize}
 
 \textbf{3. Sea Level Rise}
 \begin{itemize}
-    \item \textbf{Data}: IPCC AR6 regional sea level projections for East Sea/Sea of Japan
-    \item \textbf{RCP 4.5 (2050)}: +0.28m → 1.9\% capacity derate (cooling water intake stress)
-    \item \textbf{RCP 8.5 (2050)}: +0.45m → 3.0\% capacity derate
+    \item \textbf{Data}: IPCC AR6 WG1 Chapter 9 regional projections for East Asian Marginal Seas (Table 9.9), relative to 1995-2014 baseline
+    \item \textbf{RCP 4.5 (2050)}: +0.24m $\rightarrow$ 2.4\% capacity derate
+    \item \textbf{RCP 8.5 (2050)}: +0.32m $\rightarrow$ 3.2\% capacity derate
+    \item \textbf{RCP 8.5 (2100)}: +0.73m (median; range 0.52-1.01m)
     \item \textbf{Mechanism}: Reduced hydraulic head for cooling water pumps, amplified storm surge vulnerability
 \end{itemize}
 
 \subsubsection{Korea Investors Service (KIS) Credit Rating Methodology}
-We map financial performance to credit ratings using KIS's quantitative grid for Private Power Generation (IPP) sector:
+We map financial performance to credit ratings using KIS's quantitative grid for the Private Power Generation (IPP) sector. The methodology uses six metrics across three categories, as shown in Table~\ref{tab:kis_criteria}.
 
-\begin{itemize}
-    \item \textbf{Business Stability}: Capacity (MW), EBITDA/Fixed Assets (\%)
-    \item \textbf{Coverage Ratios}: EBITDA/Interest Expense (times)
-    \item \textbf{Leverage Ratios}: Net Debt/EBITDA, Debt/Equity, Debt/Assets
-\end{itemize}
+\begin{table}[H]
+\centering
+\caption{KIS Credit Rating Quantitative Criteria for Power Generation}
+\label{tab:kis_criteria}
+\small
+\begin{tabular}{lcccccc}
+\toprule
+\textbf{Metric} & \textbf{AAA} & \textbf{AA} & \textbf{A} & \textbf{BBB} & \textbf{BB} & \textbf{B} \\
+\midrule
+\multicolumn{7}{l}{\textit{Business Stability}} \\
+\quad Capacity (MW) & $\geq$2,000 & $\geq$800 & $\geq$400 & $\geq$100 & $\geq$20 & $<$20 \\
+\quad EBITDA/Fixed Assets (\%) & $\geq$15 & $\geq$11 & $\geq$8 & $\geq$4 & $\geq$1 & $<$1 \\
+\midrule
+\multicolumn{7}{l}{\textit{Coverage Ratios}} \\
+\quad EBITDA/Interest ($\times$) & $\geq$12 & $\geq$6 & $\geq$4 & $\geq$2 & $\geq$1 & $<$1 \\
+\midrule
+\multicolumn{7}{l}{\textit{Leverage Ratios}} \\
+\quad Net Debt/EBITDA ($\times$) & $\leq$1 & $\leq$4 & $\leq$7 & $\leq$10 & $\leq$12 & $>$12 \\
+\quad Debt/Equity (\%) & $\leq$80 & $\leq$150 & $\leq$250 & $\leq$300 & $\leq$400 & $>$400 \\
+\quad Debt/Assets (\%) & $\leq$20 & $\leq$40 & $\leq$60 & $\leq$80 & $\leq$90 & $>$90 \\
+\midrule
+\textbf{Spread (bps)} & 50 & 100 & 150 & 250 & 400 & 600 \\
+\bottomrule
+\end{tabular}
+\end{table}
 
-Ratings range from AAA (50 bps spread) to B (600 bps), with investment grade threshold at BBB/BB (250/400 bps). This allows us to endogenize cost of debt as a function of climate-driven financial deterioration.
+The overall rating follows a conservative methodology where the worst-performing component drives the final assessment. Investment grade threshold lies at BBB/BB boundary (250/400 bps spread). This allows us to endogenize cost of debt as a function of climate-driven financial deterioration, creating the feedback mechanism central to our ``death spiral'' analysis.
 
 \subsection{Scenario Design}
 
@@ -201,29 +246,33 @@ Table 2 summarizes the Net Present Value (NPV), credit rating migration, and Cli
      \label{fig:npv_comparison}
  \end{figure}
 
-\begin{table}[h]
+\begin{table}[H]
 \centering
 \caption{Comprehensive Scenario Analysis Results}
+\label{tab:scenario_results}
 \small
-\begin{tabular}{lrrcr}
+\begin{tabular}{lrrcrr}
 \toprule
-Scenario & NPV (\$M) & $\Delta$ NPV & Min DSCR & CRP (bps) \\
+\textbf{Scenario} & \textbf{NPV (\$M)} & \textbf{$\Delta$ NPV} & \textbf{Min DSCR} & \textbf{Rating} & \textbf{CRP (bps)} \\
 \midrule
-Baseline (No constraints) & 2,898 & - & 1.81 & - \\
+Baseline (No constraints) & 2,898 & --- & 1.81$\times$ & BBB & --- \\
 \midrule
-\textit{Transition Risk Only} & & & & \\
-\quad Moderate Transition & -4,381 & -251\% & -1.39 & 3,880 \\
-\quad Aggressive Transition & -7,964 & -375\% & -4.37 & 5,635 \\
+\multicolumn{6}{l}{\textit{Transition Risk Only (Korea Power Plan)}} \\
+\quad Moderate Transition & $-$4,381 & $-$251\% & $-$1.39$\times$ & B & 3,880 \\
+\quad Aggressive Transition & $-$7,964 & $-$375\% & $-$4.37$\times$ & B & 5,635 \\
 \midrule
-\textit{Physical Risk Only} & & & & \\
-\quad Moderate Physical & 1,928 & -33\% & 1.58 & 475 \\
-\quad High Physical & 1,189 & -59\% & 1.42 & 837 \\
+\multicolumn{6}{l}{\textit{Physical Risk Only (CLIMADA)}} \\
+\quad Moderate Physical (RCP 4.5) & 1,928 & $-$33\% & 1.58$\times$ & BBB & 475 \\
+\quad High Physical (RCP 8.5) & 1,189 & $-$59\% & 1.42$\times$ & BBB & 837 \\
 \midrule
-\textit{Combined Risks} & & & & \\
-\quad Combined Moderate & -5,042 & -274\% & -1.60 & 4,204 \\
-\quad Combined Aggressive & -8,411 & -390\% & -4.32 & 5,854 \\
+\multicolumn{6}{l}{\textit{Combined Risks}} \\
+\quad Combined Moderate & $-$5,042 & $-$274\% & $-$1.60$\times$ & B & 4,204 \\
+\quad Combined Aggressive & $-$8,411 & $-$390\% & $-$4.32$\times$ & B & 5,854 \\
 \bottomrule
 \end{tabular}
+\vspace{0.5em}
+
+\noindent\textit{Note}: Negative DSCR indicates project cannot service debt (EBITDA $<$ 0). Rating B indicates loss of investment grade status. CRP = Climate Risk Premium.
 \end{table}
 
 \subsubsection{Korea Power Plan Dominates Transition Risk}
@@ -427,11 +476,133 @@ This research was supported by PLANiT Institute. We thank Solutions for Our Clim
 
 \section*{References}
 \begin{enumerate}
-    \item Ministry of Trade, Industry and Energy (2023). "10th Basic Plan for Electricity Supply and Demand (2023-2036)."
-    \item Bresch, D. N., \& Aznar-Siguan, G. (2021). "CLIMADA v1: A global weather and climate risk assessment platform." \textit{Geoscientific Model Development}, 14(5), 3085-3097.
-    \item Korea Investors Service (2020). "Credit Rating Methodology for Private Power Generation Companies."
-    \item IPCC AR6 WG1 (2021). "Regional Sea Level Change." \textit{Sixth Assessment Report}, Chapter 9.
-    \item Solutions for Our Climate (2022). "Roadmap for Coal Phase-out in South Korea."
+    \item Ministry of Trade, Industry and Energy (MOTIE). (2023). \textit{10th Basic Plan for Long-term Electricity Supply and Demand (2023--2036)}. Seoul: Government of the Republic of Korea.
+
+    \item Bresch, D. N., \& Aznar-Siguan, G. (2021). CLIMADA v1.4.1: Towards a globally consistent adaptation options appraisal tool. \textit{Geoscientific Model Development}, 14(5), 3085--3097. https://doi.org/10.5194/gmd-14-3085-2021
+
+    \item Korea Investors Service (KIS). (2020). \textit{Credit Rating Methodology for Private Power Generation (IPP) Sector}. Seoul: KIS.
+
+    \item IPCC. (2021). Regional Sea Level Change (Chapter 9). In \textit{Climate Change 2021: The Physical Science Basis. Contribution of Working Group I to the Sixth Assessment Report of the Intergovernmental Panel on Climate Change} (pp. 1211--1362). Cambridge University Press.
+
+    \item Solutions for Our Climate (SFOC). (2022). \textit{Roadmap for Coal Phase-out in South Korea: Analysis and Policy Recommendations}. Seoul: SFOC.
+
+    \item Carbon Tracker Initiative. (2021). \textit{Stranded Assets and Thermal Coal: An Analysis of Environment-Related Risks}. London: Carbon Tracker.
+
+    \item Network for Greening the Financial System (NGFS). (2022). \textit{NGFS Climate Scenarios for Central Banks and Supervisors} (3rd ed.). Paris: NGFS Secretariat.
+
+    \item Korea Power Exchange (KPX). (2024). \textit{Electricity Market Statistics 2024}. Seoul: KPX.
+
+    \item International Energy Agency (IEA). (2023). \textit{World Energy Outlook 2023}. Paris: IEA.
+
+    \item Caldecott, B., Howarth, N., \& McSharry, P. (2013). Stranded Assets in Agriculture: Protecting Value from Environment-Related Risks. \textit{Smith School of Enterprise and the Environment Working Paper}.
+
+    \item Battiston, S., Mandel, A., Monasterolo, I., Sch{\"u}tze, F., \& Visentin, G. (2017). A climate stress-test of the financial system. \textit{Nature Climate Change}, 7(4), 283--288.
+
+    \item Dietz, S., Bowen, A., Dixon, C., \& Gradwell, P. (2016). `Climate value at risk' of global financial assets. \textit{Nature Climate Change}, 6(7), 676--679.
+
+    \item Korea Meteorological Administration (KMA). (2020). \textit{Korean Climate Change Assessment Report 2020: Climate Impact and Adaptation}. Seoul: KMA.
+
+    \item Global Flood Awareness System (GloFAS). (2023). \textit{GloFAS River Discharge Reanalysis v4.0}. European Commission Joint Research Centre. https://doi.org/10.24381/cds.a4fdd6b9
+
+    \item Presidential Commission on Carbon Neutrality and Green Growth. (2021). \textit{2050 Carbon Neutral Scenario}. Seoul: Government of the Republic of Korea.
 \end{enumerate}
+
+\newpage
+\appendix
+
+\section{Samcheok Blue Power Plant Financial Parameters}
+\label{app:parameters}
+
+\begin{table}[H]
+\centering
+\caption{Key Financial Parameters Used in Analysis}
+\small
+\begin{tabular}{lrl}
+\toprule
+\textbf{Parameter} & \textbf{Value} & \textbf{Source} \\
+\midrule
+\multicolumn{3}{l}{\textit{Plant Specifications}} \\
+Capacity & 2,100 MW & Public filings \\
+Technology & USC Coal & Plant specifications \\
+Investment Cost & \$4.9 billion & POSCO disclosures \\
+Design Life & 30 years & Industry standard \\
+\midrule
+\multicolumn{3}{l}{\textit{Financial Structure}} \\
+Debt/Equity Ratio & 70\%/30\% & Project financing terms \\
+Cost of Debt & 6.1--7.4\% & Bond market data \\
+Cost of Equity & 10\% & Industry benchmark \\
+Corporate Tax Rate & 24\% & Korean tax law \\
+Depreciation & Straight-line, 30 yr & Accounting standards \\
+\midrule
+\multicolumn{3}{l}{\textit{Operating Assumptions}} \\
+Baseline Capacity Factor & 50\% & Conservative estimate \\
+Electricity Price & \$80/MWh & KPX market data \\
+Fixed O\&M & \$50,000/MW/yr & Industry benchmarks \\
+Variable O\&M & \$5/MWh & Industry benchmarks \\
+Heat Rate & 8,500 BTU/kWh & USC efficiency \\
+Coal Price & \$100/tonne & Market data \\
+\midrule
+\multicolumn{3}{l}{\textit{Risk-Free Rate}} \\
+10-Year KTB Yield & 3.0\% & Bank of Korea \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Physical Hazard Parameters}
+\label{app:climada}
+
+\begin{table}[H]
+\centering
+\caption{Physical Hazard Impact Parameters for Samcheok Location (37.44°N, 129.17°E)}
+\small
+\begin{tabular}{lcccl}
+\toprule
+\textbf{Hazard} & \textbf{Baseline} & \textbf{RCP 4.5 (2050)} & \textbf{RCP 8.5 (2050)} & \textbf{Data Source} \\
+\midrule
+\multicolumn{5}{l}{\textit{Wildfire (Transmission Outage Rate)}} \\
+Fire Weather Index & 18.5 & 26.2 & 35.8 & KMA/ERA5-Land \\
+Annual Outage Rate & 1.20\% & 1.66\% & 2.24\% & Model \\
+\midrule
+\multicolumn{5}{l}{\textit{Flood (Combined Riverine + Coastal)}} \\
+Annual Outage Rate & 0.14\% & 0.21\% & 0.24\% & GLOFAS/K-water \\
+\midrule
+\multicolumn{5}{l}{\textit{Sea Level Rise (Capacity Derate)}} \\
+SLR Projection & 0 m & +0.24 m & +0.32 m & IPCC AR6 Ch.9 \\
+Capacity Derate & 0\% & 2.4\% & 3.2\% & Model \\
+\midrule
+\textbf{Total CF Impact} & \textbf{1.34\%} & \textbf{4.27\%} & \textbf{5.68\%} & \\
+\bottomrule
+\end{tabular}
+\vspace{0.5em}
+
+\noindent\textit{Sources}: Fire Weather Index from KMA Climate Change Assessment Report 2020 and ERA5-Land reanalysis; Flood data from GLOFAS v3.1 and K-water flood hazard maps; Sea level rise from IPCC AR6 WG1 Chapter 9, Table 9.9 for East Asian Marginal Seas.
+\end{table}
+
+\section{Korea Power Supply Plan Dispatch Trajectory}
+\label{app:power_plan}
+
+\begin{table}[H]
+\centering
+\caption{Coal Generation Trajectory from 10th Power Supply Plan}
+\small
+\begin{tabular}{rrrrl}
+\toprule
+\textbf{Year} & \textbf{Coal (TWh)} & \textbf{Total (TWh)} & \textbf{Coal Share} & \textbf{Implied CF (2.1 GW)} \\
+\midrule
+2024 & 195 & 600 & 32.5\% & 65\% \\
+2025 & 185 & 615 & 30.1\% & 60\% \\
+2028 & 160 & 655 & 24.4\% & 52\% \\
+2030 & 130 & 675 & 19.3\% & 45\% (NDC) \\
+2034 & 110 & 710 & 15.5\% & 38\% \\
+2036 & 95 & 735 & 12.9\% & 32\% (Plan) \\
+2040 & 70 & 780 & 9.0\% & 22\% \\
+2045 & 40 & 820 & 4.9\% & 12\% \\
+2050 & 15 & 860 & 1.7\% & 4\% (Net-Zero) \\
+\bottomrule
+\end{tabular}
+\vspace{0.5em}
+
+\noindent\textit{Source}: MOTIE 10th Basic Plan (2023--2036), extrapolated to 2050 based on NDC and net-zero commitments.
+\end{table}
 
 \end{document}
