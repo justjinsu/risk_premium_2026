@@ -8,10 +8,12 @@ from .hazards import (
     CLIMADAHazardData,
     load_climada_hazards,
     calculate_compound_risk,
+    get_hazard_description,
 )
 
 __all__ = [
     'CLIMADAHazardData',
     'load_climada_hazards',
     'calculate_compound_risk',
+    'get_hazard_description',
 ]

@@ -20,7 +20,7 @@ from src.reporting.plots import (
     plot_spreads, plot_cashflow_waterfall, plot_capacity_factor_trajectory,
     plot_npv_comparison
 )
-from src.climada.hazards import load_climada_hazards, get_hazard_description
+from src.climada import load_climada_hazards, get_hazard_description
 
 # Professional Color Palette
 COLORS = {
