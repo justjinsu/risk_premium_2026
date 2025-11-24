@@ -48,11 +48,19 @@ def calculate_expected_loss(
 def map_expected_loss_to_spreads(
     expected_loss_pct: float,
     npv_loss: float,
-    params: Dict[str, Any]
+    params: Dict[str, Any],
+    rating_spread_bps: float = None
 ) -> FinancingImpact:
     """
     Map expected loss to financing cost impacts (debt spreads, equity premiums).
     Calculate Climate Risk Premium (CRP) and adjusted WACC.
+    
+    Args:
+        expected_loss_pct: Expected loss as % of CAPEX
+        npv_loss: Absolute NPV loss
+        params: Financing parameters
+        rating_spread_bps: Optional explicit spread from credit rating model. 
+                           If provided, overrides the linear spread slope model.
     """
     # Extract parameters
     spread_slope = float(params.get("spread_slope_bps_per_pct", 50))
@@ -66,7 +74,13 @@ def map_expected_loss_to_spreads(
     baseline_debt_rate = risk_free_rate + (baseline_spread / 10000)
 
     # Risk-adjusted debt spread
-    debt_spread = baseline_spread + expected_loss_pct * spread_slope
+    if rating_spread_bps is not None:
+        # Use the explicit rating-based spread (Structural Model)
+        debt_spread = rating_spread_bps
+    else:
+        # Fallback to linear model (Reduced Form Model)
+        debt_spread = baseline_spread + expected_loss_pct * spread_slope
+        
     adjusted_debt_rate = risk_free_rate + (debt_spread / 10000)
 
     # Equity cost (baseline equity return ~12%, adjusted by risk premium)

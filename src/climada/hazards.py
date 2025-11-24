@@ -121,32 +121,70 @@ def calculate_compound_risk(
     wildfire_outage: float,
     flood_outage: float,
     slr_derate: float,
-    interaction_factor: float = 1.2
+    base_amplification: float = 1.2
 ) -> CLIMADAHazardData:
     """
-    Calculate compound hazard risk with interaction effects.
+    Calculate compound hazard risk with non-linear interaction effects.
 
-    Compound events amplify impacts beyond simple addition:
-    - Drought + wildfire → reduced firefighting capability
-    - SLR + storm surge → amplified flood risk
-    - Heat + SLR → combined cooling system stress
+    Compound events amplify impacts beyond simple addition. This model uses a 
+    sigmoid-like scaling where higher combined base risks lead to disproportionately 
+    higher amplification (systemic stress).
 
     Args:
         wildfire_outage: Base wildfire outage rate
         flood_outage: Base flood outage rate
         slr_derate: Base SLR capacity derating
-        interaction_factor: Amplification from hazard interactions (default 1.2 = 20% increase)
+        base_amplification: Minimum amplification factor (default 1.2)
 
     Returns:
         CLIMADAHazardData with compound effects
     """
+    # Sum of individual risks (proxy for total system stress)
+    total_base_risk = wildfire_outage + flood_outage + slr_derate
+    
+    # Non-linear amplification:
+    # If risks are low (<1%), amplification is close to base (1.2x)
+    # If risks are high (>5%), amplification scales up significantly (up to 2.0x)
+    # Logic: Multiple simultaneous stressors cause cascading failures (e.g., supply chain + physical damage)
+    
+    # Simple sigmoid-like scaling
+    # risk_factor goes from 0.0 to ~1.0 as total_base_risk goes from 0 to 0.10
+    risk_factor = min(1.0, total_base_risk * 10) 
+    
+    # Scale amplification from 1.2 to 2.0 based on risk factor
+    final_multiplier = base_amplification + (0.8 * risk_factor)
+
     return CLIMADAHazardData(
         wildfire_outage_rate=wildfire_outage,
         flood_outage_rate=flood_outage,
         slr_capacity_derate=slr_derate,
-        compound_multiplier=interaction_factor,
-        notes=f"Compound risk with {interaction_factor:.1%} interaction amplification"
+        compound_multiplier=final_multiplier,
+        notes=f"Compound risk with {final_multiplier:.2f}x amplification (System Stress: {total_base_risk:.1%})"
     )
+
+
+def get_hazard_description(hazard: CLIMADAHazardData) -> str:
+    """Generate a human-readable description of the hazard profile."""
+    parts = []
+    if hazard.wildfire_outage_rate > 0.01:
+        parts.append(f"High Wildfire Risk ({hazard.wildfire_outage_rate:.1%})")
+    elif hazard.wildfire_outage_rate > 0:
+        parts.append(f"Moderate Wildfire Risk ({hazard.wildfire_outage_rate:.1%})")
+        
+    if hazard.flood_outage_rate > 0.005:
+        parts.append(f"Severe Flood Risk ({hazard.flood_outage_rate:.1%})")
+    elif hazard.flood_outage_rate > 0:
+        parts.append(f"Flood Risk ({hazard.flood_outage_rate:.1%})")
+        
+    if hazard.slr_capacity_derate > 0.02:
+        parts.append(f"Critical SLR Impact ({hazard.slr_capacity_derate:.1%})")
+    elif hazard.slr_capacity_derate > 0:
+        parts.append(f"SLR Derating ({hazard.slr_capacity_derate:.1%})")
+        
+    if hazard.compound_multiplier > 1.0:
+        parts.append(f"Compound Amplification ({hazard.compound_multiplier:.1f}x)")
+        
+    return ", ".join(parts) if parts else "Low Physical Risk"
 
 
 def interpolate_hazard_by_year(

@@ -9,17 +9,6 @@ import sys
 
 import plotly.express as px
 import plotly.graph_objects as go
-
-# Professional Color Palette
-COLORS = {
-    "Baseline": "#2c3e50",
-    "Transition": "#e74c3c",
-    "Physical": "#f39c12",
-    "Combined": "#c0392b",
-    "Positive": "#27ae60",
-    "Negative": "#c0392b",
-    "Neutral": "#95a5a6"
-}
 import pandas as pd
 import streamlit as st
 
@@ -31,7 +20,19 @@ from src.reporting.plots import (
     plot_spreads, plot_cashflow_waterfall, plot_capacity_factor_trajectory,
     plot_npv_comparison
 )
+from src.climada.hazards import load_climada_hazards, get_hazard_description
 
+# Professional Color Palette
+COLORS = {
+    "Baseline": "#2c3e50",
+    "Transition": "#e74c3c",
+    "Physical": "#f39c12",
+    "Combined": "#c0392b",
+    "Positive": "#27ae60",
+    "Negative": "#c0392b",
+    "Neutral": "#95a5a6",
+    "Highlight": "#3498db"
+}
 
 st.set_page_config(
     page_title="Climate Risk Premium - Samcheok",
@@ -40,9 +41,103 @@ st.set_page_config(
 )
 
 
+def render_logic_flow():
+    """Render the Mermaid diagram for model logic."""
+    st.markdown("### Model Architecture & Logic Flow")
+    st.markdown("""
+    This diagram illustrates how physical hazards and transition risks cascade through the financial model 
+    to impact credit ratings and ultimately the Cost of Capital (WACC).
+    """)
+    
+    mermaid_code = """
+    graph TD
+        subgraph "External Risks"
+            A[Physical Hazards<br/>(CLIMADA)] -->|Wildfire, Flood, SLR| B(Physical Impact)
+            C[Transition Policy<br/>(11th Basic Plan)] -->|Carbon Tax, Phase-out| D(Transition Impact)
+        end
+
+        subgraph "Operational Impact"
+            B -->|Outages, Derating| E[Generation Volume<br/>(MWh)]
+            D -->|Utilization Cap| E
+            E --> F[Revenue]
+            D -->|Carbon Costs| G[O&M Costs]
+        end
+
+        subgraph "Financial Model"
+            F --> H{EBITDA}
+            G --> H
+            H --> I[Cash Flow Available<br/>for Debt Service]
+            I --> J[DSCR / LLCR]
+        end
+
+        subgraph "Valuation & Risk"
+            J -->|KIS Methodology| K[Credit Rating<br/>(AAA to B)]
+            K -->|Spread Matrix| L[Cost of Debt<br/>(Interest Rate)]
+            L --> M[WACC<br/>(Discount Rate)]
+            M --> N((NPV))
+            I --> N
+        end
+
+        style A fill:#f39c12,stroke:#333,stroke-width:2px
+        style C fill:#e74c3c,stroke:#333,stroke-width:2px
+        style K fill:#3498db,stroke:#333,stroke-width:2px
+        style N fill:#27ae60,stroke:#333,stroke-width:4px
+    """
+    st.graphviz_chart(mermaid_code)
+
+
+def render_hazard_explorer(base_dir: Path):
+    """Render the CLIMADA Hazard Explorer tab."""
+    st.header("🌍 CLIMADA Hazard Explorer")
+    
+    climada_file = base_dir / "data" / "raw" / "climada_hazards.csv"
+    if not climada_file.exists():
+        st.warning("CLIMADA hazard data not found.")
+        return
+
+    df = pd.read_csv(climada_file)
+    
+    # Map visualization (Static placeholder for Samcheok)
+    col1, col2 = st.columns([2, 1])
+    
+    with col1:
+        st.subheader("Hazard Data by Scenario")
+        st.dataframe(df, use_container_width=True)
+        
+        # Bar chart of outage rates
+        fig = px.bar(
+            df, 
+            x="scenario", 
+            y=["wildfire_outage_rate", "flood_outage_rate", "slr_capacity_derate"],
+            title="Physical Risk Components by Scenario",
+            labels={"value": "Annual Rate (0-1)", "variable": "Hazard Type"},
+            barmode="group"
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.subheader("Site Context")
+        st.map(pd.DataFrame({'lat': [37.4404], 'lon': [129.1671]}), zoom=10)
+        st.markdown("""
+        **Samcheok Blue Power**
+        - **Location**: Samcheok, Gangwon-do
+        - **Coordinates**: 37.44°N, 129.17°E
+        - **Terrain**: Coastal / Mountainous
+        """)
+        
+        st.info("""
+        **Hazard Definitions:**
+        - **Wildfire**: Grid transmission outages due to fire in mountain corridors.
+        - **Flood**: Riverine and coastal flooding affecting site access and cooling intake.
+        - **SLR**: Sea Level Rise reducing cooling pump efficiency and capacity.
+        """)
+
+
 def main():
     st.title("⚡ Climate Risk Premium – Samcheok Power Plant")
     st.markdown("""
+    **Risk-Efficiency Theory of Corporate Decarbonization**
+    
     Quantifying how climate risks (transition policies + physical hazards) increase financing costs
     for coal-fired power infrastructure.
     """)
@@ -125,21 +220,26 @@ def main():
 
     if not results_exist:
         st.info("👈 Click 'Run Model' in the sidebar to generate results")
+        # Show Logic Flow even before running
+        render_logic_flow()
         return
 
     # Load results
     metrics_df = pd.read_csv(scenario_file)
 
     # Main tabs
-    tab_profile, tab1, tab2, tab3, tab4, tab5, tab_methodology = st.tabs([
+    tab_logic, tab_profile, tab_hazards, tab_comparison, tab_financials, tab_crp, tab_ratings = st.tabs([
+        "🧠 Logic Flow",
         "🏭 Company Profile",
+        "🌍 Hazard Explorer",
         "📊 Scenario Comparison",
         "💰 Financial Metrics",
-        "📈 Cash Flow Analysis",
-        "🔬 Climate Risk Premium",
-        "⭐ Credit Rating Migration",
-        "📚 Methodology"
+        "🔬 Risk Premium",
+        "⭐ Credit Ratings"
     ])
+
+    with tab_logic:
+        render_logic_flow()
 
     with tab_profile:
         st.header("🏭 Samcheok Blue Power (POSCO)")
@@ -170,11 +270,6 @@ def main():
             - **Credit Rating:** AA- (Negative Outlook) $\\to$ A+ (Downgraded due to ESG concerns)
             - **Bond Yields:** Model uses **{bond_yield:.1f}%**, reflecting the "Coal Premium" over standard A+ rates.
             - **Refinancing Risk:** Large volume of corporate bonds maturing in 2024-2026.
-            
-            ### Policy Environment (11th Basic Plan)
-            - **Coal Phase-out:** Korea aims to phase out all coal plants by the 2040s.
-            - **Conversion:** Plans to convert aging coal plants to LNG/Hydrogen.
-            - **Risk:** Samcheok, being the newest, faces the highest risk of becoming a **Stranded Asset** if forced to retire early (e.g., 2040) before recovering its 30-year useful life.
             """)
             
         with col2:
@@ -185,18 +280,14 @@ def main():
             - **Fuel:** Bituminous Coal
             - **Life:** {int(plant_params.get('useful_life', 30))} Years
             """)
-            
-            st.warning("""
-            **Risk Factors**
-            - **Transition:** Carbon Tax, Early Retirement
-            - **Market:** Low Demand, Renewable Competition
-            - **Physical:** Drought (Water Cooling), Wildfires
-            """)
 
-    with tab1:
+    with tab_hazards:
+        render_hazard_explorer(base_dir)
+
+    with tab_comparison:
         st.header("Scenario Comparison")
         
-        # Move Key Findings to top
+        # Key Findings
         st.subheader("Key Findings")
         baseline_row = metrics_df[metrics_df["scenario"] == "baseline"]
         if len(baseline_row) > 0:
@@ -217,9 +308,51 @@ def main():
         col1, col2 = st.columns(2)
 
         with col1:
-            st.subheader("NPV & IRR Comparison")
-            fig = plot_npv_comparison(metrics_df)
-            st.plotly_chart(fig, use_container_width=True)
+            st.subheader("NPV Waterfall")
+            # Create a simplified waterfall chart
+            if len(risk_scenarios) > 0:
+                # Calculate deltas from baseline
+                deltas = []
+                labels = []
+                
+                # Baseline
+                deltas.append(baseline['npv_million'])
+                labels.append("Baseline")
+                
+                # Transition Effect (approximate from a transition scenario)
+                trans_scen = metrics_df[metrics_df['scenario'].str.contains('transition')].iloc[0] if any(metrics_df['scenario'].str.contains('transition')) else baseline
+                trans_impact = trans_scen['npv_million'] - baseline['npv_million']
+                deltas.append(trans_impact)
+                labels.append("Transition Impact")
+                
+                # Physical Effect
+                phys_scen = metrics_df[metrics_df['scenario'].str.contains('physical')].iloc[0] if any(metrics_df['scenario'].str.contains('physical')) else baseline
+                phys_impact = phys_scen['npv_million'] - baseline['npv_million']
+                deltas.append(phys_impact)
+                labels.append("Physical Impact")
+                
+                # Combined (Residual interaction)
+                combined_scen = metrics_df[metrics_df['scenario'].str.contains('combined')].iloc[0] if any(metrics_df['scenario'].str.contains('combined')) else baseline
+                # Interaction is the difference between combined and (baseline + trans + phys)
+                interaction = combined_scen['npv_million'] - (baseline['npv_million'] + trans_impact + phys_impact)
+                deltas.append(interaction)
+                labels.append("Compound Interaction")
+                
+                # Final
+                deltas.append(combined_scen['npv_million'])
+                labels.append("Final NPV")
+                
+                fig = go.Figure(go.Waterfall(
+                    name = "20", orientation = "v",
+                    measure = ["absolute", "relative", "relative", "relative", "total"],
+                    x = labels,
+                    textposition = "outside",
+                    text = [f"${x:,.0f}M" for x in deltas],
+                    y = deltas,
+                    connector = {"line":{"color":"rgb(63, 63, 63)"}},
+                ))
+                fig.update_layout(title = "NPV Bridge: Baseline to Combined Risk", showlegend = False)
+                st.plotly_chart(fig, use_container_width=True)
 
         with col2:
             st.subheader("Key Metrics Table")
@@ -228,33 +361,9 @@ def main():
             display_df.columns = ["Scenario", "NPV (M$)", "IRR (%)", "Avg DSCR", "Min DSCR", "LLCR"]
             st.dataframe(display_df, use_container_width=True, hide_index=True)
 
-    with tab2:
+    with tab_financials:
         st.header("Financial Metrics Deep Dive")
-
-        # Scenario selector
-        scenarios = metrics_df["scenario"].unique()
-        selected_scenario = st.selectbox("Select Scenario", scenarios)
-
-        scenario_data = metrics_df[metrics_df["scenario"] == selected_scenario].iloc[0]
-
-        col1, col2, col3, col4 = st.columns(4)
-
-        with col1:
-            st.metric("NPV", f"${scenario_data['npv_million']:.1f}M")
-        with col2:
-            st.metric("IRR", f"{scenario_data['irr_pct']:.2f}%")
-        with col3:
-            st.metric("Avg DSCR", f"{scenario_data['avg_dscr']:.2f}")
-        with col4:
-            st.metric("LLCR", f"{scenario_data['llcr']:.2f}")
-
-        # Full metrics table
-        st.subheader("All Metrics")
-        st.dataframe(metrics_df, use_container_width=True, hide_index=True)
-
-    with tab3:
-        st.header("Cash Flow Analysis")
-
+        
         # Load cashflow data
         cashflow_dfs = {}
         for scenario_name in metrics_df["scenario"]:
@@ -263,405 +372,72 @@ def main():
                 cashflow_dfs[scenario_name] = pd.read_csv(cf_path)
 
         if cashflow_dfs:
-            # Capacity factor trajectory
-            st.subheader("Capacity Factor Trajectory")
-            fig_cf = plot_capacity_factor_trajectory(cashflow_dfs)
-            st.plotly_chart(fig_cf, use_container_width=True)
-            
-            # Market Price Trajectory
-            st.subheader("Power Price Trajectory")
-            
-            price_data = []
-            for name, df in cashflow_dfs.items():
-                if "price" in df.columns:
-                    for _, row in df.iterrows():
-                        price_data.append({"Year": row["year"], "Price ($/MWh)": row["price"], "Scenario": name})
-            
-            if price_data:
-                price_df = pd.DataFrame(price_data)
-                fig_price = px.line(price_df, x="Year", y="Price ($/MWh)", color="Scenario",
-                                  title="Wholesale Power Price Forecast")
-                st.plotly_chart(fig_price, use_container_width=True)
-
-            # Waterfall chart
-            st.subheader("Net Present Value (NPV) Impact")
-            
-            # Prepare data for plotting
-            scenarios = list(results.keys())
-            npvs = [res.metrics.npv / 1e6 for res in results.values()]
-            
-            # Assign colors based on scenario name
-            bar_colors = []
-            for s in scenarios:
-                if "baseline" in s: bar_colors.append(COLORS["Baseline"])
-                elif "physical" in s and "transition" not in s: bar_colors.append(COLORS["Physical"])
-                elif "transition" in s and "physical" not in s: bar_colors.append(COLORS["Transition"])
-                else: bar_colors.append(COLORS["Combined"])
-
-            fig_npv = go.Figure(data=[
-                go.Bar(
-                    x=scenarios, 
-                    y=npvs,
-                    marker_color=bar_colors,
-                    text=[f"${x:,.0f}M" for x in npvs],
-                    textposition='auto',
-                )
-            ])
-            
-            fig_npv.update_layout(
-                title="Project NPV by Scenario",
-                yaxis_title="NPV (Million USD)",
-                template="plotly_white",
-                height=500,
-                xaxis_tickangle=-15
-            )
-            st.plotly_chart(fig_npv, use_container_width=True)
-
-            # Cash Flow Projection Chart
             st.subheader("Cash Flow Projection")
-            selected_scenario_cf = st.selectbox("Select Scenario for Cash Flow Projection", list(cashflow_dfs.keys()), key="cf_proj")
+            selected_scenario_cf = st.selectbox("Select Scenario", list(cashflow_dfs.keys()), key="cf_proj")
+            
             if selected_scenario_cf in cashflow_dfs:
                 cf_df = cashflow_dfs[selected_scenario_cf]
                 
-                # Plot Cash Flow
                 fig_cf = go.Figure()
+                fig_cf.add_trace(go.Scatter(x=cf_df["year"], y=cf_df["free_cash_flow"] / 1e6, name="Free Cash Flow", line=dict(color=COLORS["Positive"], width=3)))
+                fig_cf.add_trace(go.Bar(x=cf_df["year"], y=cf_df["ebitda"] / 1e6, name="EBITDA", marker_color=COLORS["Baseline"], opacity=0.3))
                 
-                # Free Cash Flow Line
-                fig_cf.add_trace(go.Scatter(
-                    x=cf_df["year"],
-                    y=cf_df["free_cash_flow"] / 1e6,
-                    name="Free Cash Flow",
-                    line=dict(color=COLORS["Positive"], width=3),
-                    mode='lines+markers'
-                ))
-                
-                # EBITDA Bar
-                fig_cf.add_trace(go.Bar(
-                    x=cf_df["year"],
-                    y=cf_df["ebitda"] / 1e6,
-                    name="EBITDA",
-                    marker_color=COLORS["Baseline"],
-                    opacity=0.3
-                ))
-                
-                # Net Income Bar
-                fig_cf.add_trace(go.Bar(
-                    x=cf_df["year"],
-                    y=cf_df["net_income"] / 1e6,
-                    name="Net Income",
-                    marker_color=COLORS["Neutral"],
-                    opacity=0.5
-                ))
-                
-                fig_cf.update_layout(
-                    title=f"Cash Flow Projection: {selected_scenario_cf}",
-                    xaxis_title="Year",
-                    yaxis_title="USD Million",
-                    template="plotly_white",
-                    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                    hovermode="x unified"
-                )
+                fig_cf.update_layout(title=f"Cash Flow: {selected_scenario_cf}", yaxis_title="USD Million", template="plotly_white")
                 st.plotly_chart(fig_cf, use_container_width=True)
 
-            # Time series table
-            st.subheader("Annual Cash Flows")
-            ts_scenario = st.selectbox("Select Scenario for Time Series", list(cashflow_dfs.keys()), key="ts")
-            if ts_scenario in cashflow_dfs:
-                # Display the full cash flow dataframe with all columns
-                st.dataframe(cashflow_dfs[ts_scenario], use_container_width=True, hide_index=True)
-        else:
-            st.warning("No cash flow data found")
-
-    with tab4:
+    with tab_crp:
         st.header("Climate Risk Premium Analysis")
-
-        # Filter to risk scenarios only
         risk_scenarios = metrics_df[metrics_df["scenario"] != "baseline"].copy()
-
-        if len(risk_scenarios) > 0 and "crp_bps" in risk_scenarios.columns:
-            # CRP visualization
+        
+        if len(risk_scenarios) > 0:
             st.subheader("Debt Spreads & Climate Risk Premium")
             fig_crp = plot_spreads(risk_scenarios)
             st.plotly_chart(fig_crp, use_container_width=True)
+            
+            st.info("""
+            **Climate Risk Premium (CRP)** represents the additional yield investors demand to hold assets exposed to climate risks.
+            It is calculated as the difference between the risk-adjusted WACC and the baseline WACC.
+            """)
 
-            # Summary cards
-            st.subheader("Risk Impact Summary")
-
-            baseline_row = metrics_df[metrics_df["scenario"] == "baseline"]
-            if len(baseline_row) > 0:
-                baseline = baseline_row.iloc[0]
-
-                col1, col2, col3 = st.columns(3)
-
-                with col1:
-                    st.metric("Baseline NPV", f"${baseline['npv_million']:.1f}M")
-
-                # Find worst case
-                worst_idx = risk_scenarios["crp_bps"].idxmax()
-                worst_case = risk_scenarios.loc[worst_idx]
-
-                with col2:
-                    npv_loss = baseline['npv_million'] - worst_case['npv_million']
-                    st.metric(
-                        "Max NPV Loss",
-                        f"${npv_loss:.1f}M",
-                        delta=f"-{(npv_loss/baseline['npv_million']*100):.1f}%",
-                        delta_color="inverse"
-                    )
-
-                with col3:
-                    st.metric(
-                        "Max CRP",
-                        f"{worst_case['crp_bps']:.0f} bps",
-                        delta=f"{worst_case['scenario']}",
-                        delta_color="off"
-                    )
-
-            # Detailed risk table
-            st.subheader("Risk Scenario Details")
-            risk_cols = ["scenario", "expected_loss_pct", "npv_loss_million", "crp_bps",
-                        "debt_spread_bps", "wacc_baseline_pct", "wacc_adjusted_pct"]
-            risk_display = risk_scenarios[risk_cols].copy()
-            risk_display.columns = ["Scenario", "Expected Loss (%)", "NPV Loss (M$)", "CRP (bps)",
-                                   "Debt Spread (bps)", "Baseline WACC (%)", "Adjusted WACC (%)"]
-            st.dataframe(risk_display, use_container_width=True, hide_index=True)
-        else:
-            st.warning("No risk scenario data available. Run the model first.")
-
-    with tab5:
-        st.header("⭐ Credit Rating Migration Analysis")
-        st.markdown("""
-        Credit ratings based on **Korea Investors Service (KIS)** methodology for Private Power Generation (IPP).
-        Quantitative assessment across 6 metrics: capacity, profitability, coverage, and leverage ratios.
-        """)
-
-        # Check if credit ratings exist
+    with tab_ratings:
+        st.header("⭐ Credit Rating Migration")
         credit_file = processed_dir / "credit_ratings.csv"
+        
         if credit_file.exists():
             credit_df = pd.read_csv(credit_file)
-
-            # Rating migration summary
-            st.subheader("Rating Migration Summary")
-
-            if "baseline" in credit_df["scenario"].values:
-                baseline_rating = credit_df[credit_df["scenario"] == "baseline"].iloc[0]
-
-                col1, col2, col3, col4 = st.columns(4)
-
-                with col1:
-                    st.metric(
-                        "Baseline Rating",
-                        baseline_rating["overall_rating"],
-                        delta=f"{baseline_rating['spread_bps']:.0f} bps"
-                    )
-
-                # Find worst rating
-                worst_idx = credit_df["rating_numeric"].idxmax()
-                worst_rating = credit_df.loc[worst_idx]
-
-                with col2:
-                    notch_change = worst_rating["rating_numeric"] - baseline_rating["rating_numeric"]
-                    st.metric(
-                        "Worst-Case Rating",
-                        worst_rating["overall_rating"],
-                        delta=f"↓ {notch_change:.0f} notches",
-                        delta_color="inverse"
-                    )
-
-                with col3:
-                    spread_increase = worst_rating["spread_bps"] - baseline_rating["spread_bps"]
-                    st.metric(
-                        "Spread Increase",
-                        f"{spread_increase:.0f} bps",
-                        delta=worst_rating["scenario"]
-                    )
-
-                with col4:
-                    investment_grade = "Yes" if baseline_rating["rating_numeric"] <= 4 else "No"
-                    worst_ig = "Yes" if worst_rating["rating_numeric"] <= 4 else "No"
-                    ig_loss = "Lost" if investment_grade == "Yes" and worst_ig == "No" else "Maintained"
-                    st.metric(
-                        "Investment Grade",
-                        worst_ig,
-                        delta=ig_loss,
-                        delta_color="inverse" if ig_loss == "Lost" else "normal"
-                    )
-
-            # Rating migration matrix
-            st.subheader("Rating by Scenario")
-
+            
+            st.subheader("Rating Migration Matrix")
+            
             # Create rating heatmap
             rating_map = {"AAA": 1, "AA": 2, "A": 3, "BBB": 4, "BB": 5, "B": 6}
             scenarios = credit_df["scenario"].tolist()
             ratings = credit_df["overall_rating"].tolist()
-            spreads = credit_df["spread_bps"].tolist()
-
+            
             colors = ["#2ecc71" if r in ["AAA", "AA", "A", "BBB"] else "#e74c3c" for r in ratings]
 
             fig = go.Figure(data=[go.Bar(
                 x=scenarios,
                 y=[rating_map.get(r, 6) for r in ratings],
-                text=[f"{r}<br>{s:.0f} bps" for r, s in zip(ratings, spreads)],
+                text=ratings,
                 textposition="auto",
-                marker_color=colors,
-                hovertemplate="<b>%{x}</b><br>Rating: %{text}<extra></extra>"
+                marker_color=colors
             )])
 
             fig.update_layout(
                 title="Credit Rating by Scenario",
-                xaxis_title="Scenario",
-                yaxis_title="Rating Level (1=AAA, 6=B)",
-                yaxis=dict(
-                    tickmode='array',
-                    tickvals=[1, 2, 3, 4, 5, 6],
-                    ticktext=['AAA', 'AA', 'A', 'BBB', 'BB', 'B'],
-                    autorange="reversed"
-                ),
-                height=500,
-                shapes=[
-                    dict(
-                        type='line',
-                        x0=-0.5,
-                        x1=len(scenarios)-0.5,
-                        y0=4.5,
-                        y1=4.5,
-                        line=dict(color='red', width=2, dash='dash'),
-                    )
-                ],
-                annotations=[
-                    dict(
-                        x=len(scenarios)/2,
-                        y=4.5,
-                        text="Investment Grade Threshold",
-                        showarrow=False,
-                        yshift=10,
-                        font=dict(color="red", size=12)
-                    )
-                ]
+                yaxis=dict(tickvals=[1, 2, 3, 4, 5, 6], ticktext=['AAA', 'AA', 'A', 'BBB', 'BB', 'B'], autorange="reversed")
             )
-
             st.plotly_chart(fig, use_container_width=True)
-
-            # Component ratings breakdown
-            st.subheader("Component Ratings Breakdown")
-
-            component_cols = ["scenario", "capacity_rating", "profitability_rating", "coverage_rating",
-                            "net_debt_leverage_rating", "equity_leverage_rating", "asset_leverage_rating"]
-
-            if all(col in credit_df.columns for col in component_cols):
-                selected_scenario = st.selectbox(
-                    "Select Scenario for Detailed Breakdown",
-                    credit_df["scenario"].tolist(),
-                    key="rating_scenario"
-                )
-
-                scenario_data = credit_df[credit_df["scenario"] == selected_scenario].iloc[0]
-
-                col1, col2 = st.columns(2)
-
-                with col1:
-                    st.markdown("**Business Stability**")
-                    st.metric("Capacity", scenario_data["capacity_rating"],
-                             delta=f"{scenario_data['capacity_mw']:.0f} MW")
-                    st.metric("Profitability (EBITDA/Fixed Assets)",
-                             scenario_data["profitability_rating"],
-                             delta=f"{scenario_data['ebitda_to_fixed_assets']:.2f}%")
-
-                    st.markdown("**Coverage**")
-                    st.metric("EBITDA/Interest", scenario_data["coverage_rating"],
-                             delta=f"{scenario_data['ebitda_to_interest']:.2f}x")
-
-                with col2:
-                    st.markdown("**Leverage Ratios**")
-                    st.metric("Net Debt/EBITDA", scenario_data["net_debt_leverage_rating"],
-                             delta=f"{scenario_data['net_debt_to_ebitda']:.2f}x")
-                    st.metric("Debt/Equity", scenario_data["equity_leverage_rating"],
-                             delta=f"{scenario_data['debt_to_equity']:.2f}%")
-                    st.metric("Debt/Assets", scenario_data["asset_leverage_rating"],
-                             delta=f"{scenario_data['debt_to_assets']:.2f}%")
-
-            # Full ratings table
+            
             st.subheader("Detailed Ratings Table")
-            display_cols = ["scenario", "overall_rating", "spread_bps", "capacity_rating",
-                          "profitability_rating", "coverage_rating", "net_debt_leverage_rating",
-                          "equity_leverage_rating", "asset_leverage_rating"]
-            if all(col in credit_df.columns for col in display_cols):
-                display_df = credit_df[display_cols].copy()
-                display_df.columns = ["Scenario", "Overall", "Spread (bps)", "Capacity",
-                                     "Profitability", "Coverage", "Net Debt", "Equity", "Assets"]
-                st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-            # KIS Rating Criteria Reference
-            with st.expander("📚 KIS Rating Criteria Reference"):
-                st.markdown("""
-                ### Korea Investors Service (KIS) Rating Grid
-
-                | Metric | AAA | AA | A | BBB | BB | B |
-                |--------|-----|----|----|-----|----|----|
-                | **Capacity (MW)** | ≥2000 | ≥800 | ≥400 | ≥100 | ≥20 | <20 |
-                | **EBITDA/Fixed Assets (%)** | ≥15 | ≥11 | ≥8 | ≥4 | ≥1 | <1 |
-                | **EBITDA/Interest (x)** | ≥12 | ≥6 | ≥4 | ≥2 | ≥1 | <1 |
-                | **Net Debt/EBITDA (x)** | ≤1 | ≤4 | ≤7 | ≤10 | ≤12 | >12 |
-                | **Debt/Equity (%)** | ≤80 | ≤150 | ≤250 | ≤300 | ≤400 | >400 |
-                | **Debt/Assets (%)** | ≤20 | ≤40 | ≤60 | ≤80 | ≤90 | >90 |
-
-                **Rating Spreads:**
-                - AAA: 50 bps
-                - AA: 100 bps
-                - A: 150 bps
-                - **BBB: 250 bps** (Investment Grade Floor)
-                - BB: 400 bps
-                - B: 600 bps
-
-                **Investment Grade:** AAA, AA, A, BBB (rating_numeric ≤ 4)
-                **Speculative Grade:** BB, B (rating_numeric > 4)
-                """)
-
-        else:
-            st.warning("No credit rating data found. Run the model to generate ratings.")
+            st.dataframe(credit_df, use_container_width=True)
 
     # Footer
     st.sidebar.markdown("---")
     st.sidebar.markdown("""
     **About this tool**
-
-    **Features:**
-    - Climate Risk Premium (CRP) analysis
-    - KIS credit rating assessment
-    - Multi-scenario comparison
-    - Rating migration analysis
-
     Developed for climate risk analysis of the Samcheok Power Plant.
-    Open-source framework for quantifying climate-finance risks.
-
-    **Methodologies:**
-    - Expected loss framework
-    - KIS quantitative rating grid
-    - Project finance metrics (DSCR, LLCR)
     """)
-
-
-    with tab_methodology:
-        st.subheader("Methodology & Assumptions")
-        st.markdown("""
-        ### Financial Model Specification
-        The model calculates **Free Cash Flow to Firm (FCFF)** using a bottom-up approach:
-        
-        $$
-        FCFF = EBIT \\times (1 - \\tau) + Depreciation - Capex
-        $$
-        
-        **Key Assumptions:**
-        -   **Corporate Tax Rate ($\\tau$)**: 24% (Standard Korean rate)
-        -   **Depreciation**: Straight-line over 30 years (Useful life)
-        -   **Debt Service**: Level annuity payments (Principal + Interest)
-        -   **Discount Rate (WACC)**: 8% (Baseline)
-        
-        ### Data Sources
-        1.  **Power Plan**: Official 10th Basic Plan & Draft 11th Basic Plan trajectories.
-        2.  **Physical Risk**: CLIMADA hazard data (Wildfire, Flood, SLR) specific to Samcheok.
-        3.  **Credit Rating**: KIS Methodology mapping DSCR to credit spreads.
-        """)
 
 if __name__ == "__main__":
     main()
