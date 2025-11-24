@@ -21,7 +21,7 @@ from src.reporting.plots import (
     plot_npv_comparison
 )
 try:
-    from src.climada.hazards import load_climada_hazards, get_hazard_description
+    from src.climada.hazards import load_climada_hazards, CLIMADAHazardData
 except ImportError as e:
     import streamlit as st
     st.error(f"CRITICAL ERROR: Failed to import CLIMADA modules.")
@@ -40,6 +40,29 @@ COLORS = {
     "Neutral": "#95a5a6",
     "Highlight": "#3498db"
 }
+
+def get_hazard_description(hazard: CLIMADAHazardData) -> str:
+    """Generate a human-readable description of the hazard profile."""
+    parts = []
+    if hazard.wildfire_outage_rate > 0.01:
+        parts.append(f"High Wildfire Risk ({hazard.wildfire_outage_rate:.1%})")
+    elif hazard.wildfire_outage_rate > 0:
+        parts.append(f"Moderate Wildfire Risk ({hazard.wildfire_outage_rate:.1%})")
+        
+    if hazard.flood_outage_rate > 0.005:
+        parts.append(f"Severe Flood Risk ({hazard.flood_outage_rate:.1%})")
+    elif hazard.flood_outage_rate > 0:
+        parts.append(f"Flood Risk ({hazard.flood_outage_rate:.1%})")
+        
+    if hazard.slr_capacity_derate > 0.02:
+        parts.append(f"Critical SLR Impact ({hazard.slr_capacity_derate:.1%})")
+    elif hazard.slr_capacity_derate > 0:
+        parts.append(f"SLR Derating ({hazard.slr_capacity_derate:.1%})")
+        
+    if hazard.compound_multiplier > 1.0:
+        parts.append(f"Compound Amplification ({hazard.compound_multiplier:.1f}x)")
+        
+    return ", ".join(parts) if parts else "Low Physical Risk"
 
 st.set_page_config(
     page_title="Climate Risk Premium - Samcheok",
