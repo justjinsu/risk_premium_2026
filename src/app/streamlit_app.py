@@ -328,7 +328,7 @@ def main():
         st.header("Scenario Comparison")
         
         # Key Findings
-        st.subheader("Key Findings")
+        st.subheader("🎯 Key Findings: The Three Key Outputs")
         baseline_row = metrics_df[metrics_df["scenario"] == "baseline"]
         if len(baseline_row) > 0:
             baseline = baseline_row.iloc[0]
@@ -339,11 +339,19 @@ def main():
                 worst_case = risk_scenarios.loc[worst_idx]
                 
                 k1, k2, k3 = st.columns(3)
-                k1.metric("Baseline NPV", f"${baseline['npv_million']:,.0f}M")
-                k2.metric("Worst Case NPV", f"${worst_case['npv_million']:,.0f}M", 
-                         delta=f"{(worst_case['npv_million'] - baseline['npv_million']):,.0f}M", delta_color="inverse")
-                k3.metric("Max Climate Risk Premium", f"{worst_case.get('crp_bps', 0):.0f} bps",
-                         delta="Cost of Capital Spike", delta_color="inverse")
+                
+                # 1. Credit Rating Signal
+                base_rating = baseline.get('overall_rating', 'AA-')
+                worst_rating = worst_case.get('overall_rating', 'BBB+')
+                k1.metric("1. Credit Rating Signal", f"{worst_rating}", f"Downgrade from {base_rating}", delta_color="inverse")
+                
+                # 2. Climate Risk Premium
+                crp = worst_case.get('crp_bps', 0)
+                k2.metric("2. Climate Risk Premium", f"+{crp:.0f} bps", "Cost of Debt Increase", delta_color="inverse")
+                
+                # 3. Valuation Impact
+                npv_loss = baseline['npv_million'] - worst_case['npv_million']
+                k3.metric("3. Valuation Impact (NPV)", f"-${npv_loss:,.0f}M", "Total Value Destroyed", delta_color="inverse")
 
         col1, col2 = st.columns(2)
 
