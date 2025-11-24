@@ -12,7 +12,7 @@ from src.scenarios import PhysicalScenario
 
 # Conditional import for CLIMADA - allows backward compatibility
 try:
-    from src.climada import CLIMADAHazardData
+    from src.climada.hazards import CLIMADAHazardData
     CLIMADA_AVAILABLE = True
 except ImportError:
     CLIMADA_AVAILABLE = False
