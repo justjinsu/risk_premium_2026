@@ -20,7 +20,14 @@ from src.reporting.plots import (
     plot_spreads, plot_cashflow_waterfall, plot_capacity_factor_trajectory,
     plot_npv_comparison
 )
-from src.climada.hazards import load_climada_hazards, get_hazard_description
+try:
+    from src.climada.hazards import load_climada_hazards, get_hazard_description
+except ImportError as e:
+    import streamlit as st
+    st.error(f"CRITICAL ERROR: Failed to import CLIMADA modules.")
+    st.error(f"Error details: {e}")
+    st.write("Debug Info - sys.path:", sys.path)
+    st.stop()
 
 # Professional Color Palette
 COLORS = {
