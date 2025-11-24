@@ -278,9 +278,19 @@ def main():
         plant_df = pd.read_csv(base_dir / "data" / "raw" / "plant_parameters.csv")
         plant_params = dict(zip(plant_df['param_name'], plant_df['value']))
         
-        capex_trillion = float(plant_params.get('total_capex_million', 4900)) / 1000 * 1.3 # Approx conversion to KRW
-        bond_yield = float(plant_params.get('debt_interest_rate', 0.061)) * 100
-        capacity = float(plant_params.get('capacity_mw', 2100))
+        # Safe casting helper
+        def get_float_param(key, default=0.0):
+            try:
+                return float(plant_params.get(key, default))
+            except (ValueError, TypeError):
+                return default
+
+        capex_val = get_float_param('total_capex_million', 4900)
+        capex_trillion = capex_val / 1000 * 1.3 # Approx conversion to KRW
+        bond_yield = get_float_param('debt_interest_rate', 0.061) * 100
+        capacity = get_float_param('capacity_mw', 2100)
+        efficiency = get_float_param('efficiency', 0.42)
+        useful_life = int(get_float_param('useful_life', 30))
         
         col1, col2 = st.columns([2, 1])
         
@@ -291,7 +301,7 @@ def main():
             
             - **Owner:** Samcheok Blue Power Co., Ltd. (Subsidiary of POSCO)
             - **Status:** Unit 1 (Commercial Operation May 2024), Unit 2 (Oct 2024)
-            - **Total Investment:** ~{capex_trillion:.1f} Trillion KRW (Model Input: ${plant_params.get('total_capex_million'):,.0f}M)
+            - **Total Investment:** ~{capex_trillion:.1f} Trillion KRW (Model Input: ${capex_val:,.0f}M)
             - **Financing:** Project Finance + Corporate Bonds
             
             ### Financial Context
@@ -306,9 +316,9 @@ def main():
             st.info(f"""
             **Key Specs**
             - **Capacity:** {capacity:,.0f} MW
-            - **Efficiency:** {float(plant_params.get('efficiency', 0.42))*100:.0f}% (USC)
+            - **Efficiency:** {efficiency*100:.0f}% (USC)
             - **Fuel:** Bituminous Coal
-            - **Life:** {int(plant_params.get('useful_life', 30))} Years
+            - **Life:** {useful_life} Years
             """)
 
     with tab_hazards:
