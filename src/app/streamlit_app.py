@@ -1,22 +1,13 @@
 """
 Climate Risk Premium Dashboard - Streamlit App
 
-RESTRUCTURED VERSION using modular CSV outputs:
-- transition_results.csv
-- physical_results.csv  
-- cashflow_results.csv
-- credit_results.csv
-- model_results.csv
+Visualizes CRP model results for Samcheok Blue Power Plant (2,100 MW).
 
-Pages:
-1. Model Overview - Structure diagram and data flow
-2. Input Data - Documentation and raw input files
-3. Transition Results - Policy/dispatch impacts
-4. Physical Results - CLIMADA hazard impacts  
-5. Cashflow Results - Revenue, costs, EBITDA
-6. Credit Results - DSCR, ratings, spreads
-7. Final Analysis - Combined model results
-8. Run Model - Execute pipeline with custom scenarios
+Data Sources:
+- data/processed/scenario_comparison.csv (main results from CRPModelRunner)
+- data/processed/cashflow_*.csv (time-series per scenario)
+- data/processed/credit_ratings.csv (rating details)
+- results/modules/*.csv (legacy module outputs)
 """
 import streamlit as st
 import pandas as pd
@@ -29,9 +20,6 @@ import sys
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from src.data_loader import DataLoader
-from src.outputs.csv_generator import run_full_pipeline
-
 # =============================================================================
 # PAGE CONFIG
 # =============================================================================
@@ -43,10 +31,10 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Colors
+# Colors for consistent theming
 COLORS = {
     "primary": "#1a5f7a",
-    "secondary": "#159895", 
+    "secondary": "#159895",
     "accent": "#57c5b6",
     "warning": "#f39c12",
     "danger": "#e74c3c",
@@ -57,24 +45,12 @@ COLORS = {
     "credit": "#9b59b6",
 }
 
-# Custom CSS
-st.markdown("""
-<style>
-    .module-card {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        padding: 20px;
-        border-radius: 10px;
-        color: white;
-        margin: 10px 0;
-    }
-    .metric-card {
-        background: #f8f9fa;
-        padding: 15px;
-        border-radius: 8px;
-        border-left: 4px solid #1a5f7a;
-    }
-</style>
-""", unsafe_allow_html=True)
+# Rating color map
+RATING_COLORS = {
+    "AAA": "#006400", "AA": "#228B22", "A": "#32CD32",
+    "BBB": "#90EE90", "BB": "#FFD700", "B": "#FFA500",
+    "CCC": "#FF6347", "CC": "#FF4500", "C": "#DC143C", "D": "#8B0000"
+}
 
 
 # =============================================================================
@@ -82,538 +58,557 @@ st.markdown("""
 # =============================================================================
 
 @st.cache_data
-def load_module_results(base_dir: Path):
-    """Load all module result CSVs."""
-    modules_dir = base_dir / "results" / "modules"
+def load_scenario_comparison():
+    """Load main scenario comparison results."""
+    path = project_root / "data" / "processed" / "scenario_comparison.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return None
+
+
+@st.cache_data
+def load_cashflow_data(scenario_name: str):
+    """Load cashflow time-series for a specific scenario."""
+    path = project_root / "data" / "processed" / f"cashflow_{scenario_name}.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return None
+
+
+@st.cache_data
+def load_all_cashflows():
+    """Load all available cashflow files."""
+    processed_dir = project_root / "data" / "processed"
+    cashflows = {}
+    for f in processed_dir.glob("cashflow_*.csv"):
+        scenario_name = f.stem.replace("cashflow_", "")
+        cashflows[scenario_name] = pd.read_csv(f)
+    return cashflows
+
+
+@st.cache_data
+def load_credit_ratings():
+    """Load credit ratings detail."""
+    path = project_root / "data" / "processed" / "credit_ratings.csv"
+    if path.exists():
+        return pd.read_csv(path)
+    return None
+
+
+@st.cache_data
+def load_module_results():
+    """Load legacy module results from results/modules/."""
+    modules_dir = project_root / "results" / "modules"
     results = {}
-    
-    for csv_file in ["transition_results.csv", "physical_results.csv", 
+    for csv_file in ["transition_results.csv", "physical_results.csv",
                      "cashflow_results.csv", "credit_results.csv"]:
         path = modules_dir / csv_file
         if path.exists():
             results[csv_file.replace("_results.csv", "")] = pd.read_csv(path)
-    
-    combined_path = base_dir / "results" / "model_results.csv"
-    if combined_path.exists():
-        results["combined"] = pd.read_csv(combined_path)
-    
     return results
 
 
-@st.cache_data
-def load_input_data(base_dir: Path):
-    """Load input data for display."""
-    loader = DataLoader(base_dir)
-    return {
-        'plant': loader.load_plant_parameters(),
-        'transition': loader.load_transition_scenarios(),
-        'physical': loader.load_physical_scenarios(),
-        'market': loader.load_market_scenarios(),
-        'credit_grid': loader.load_credit_rating_grid(),
-        'power_plan': loader.load_korea_power_plan(),
-    }
-
-
-@st.cache_data
-def load_documentation(filename: str):
-    """Load markdown documentation."""
-    doc_path = project_root / filename
-    if doc_path.exists():
-        return doc_path.read_text()
-    return f"Documentation not found: {filename}"
-
-
 # =============================================================================
-# MODEL OVERVIEW PAGE
+# PAGE: MODEL OVERVIEW
 # =============================================================================
 
 def page_model_overview():
-    """Model Overview - Structure and Logic."""
-    st.header("🏗️ Model Architecture")
-    st.markdown("**Climate Risk Premium Model for Samcheok Blue Power Plant (2,100 MW)**")
-    
+    """Model Overview - Architecture and Key Metrics."""
+    st.header("🏗️ Climate Risk Premium Model")
+    st.markdown("**Samcheok Blue Power Plant (2,100 MW Coal-Fired)**")
+
+    # Load data
+    df = load_scenario_comparison()
+
+    if df is not None:
+        # Key metrics from scenario comparison
+        col1, col2, col3, col4 = st.columns(4)
+
+        baseline = df[df['scenario'] == 'baseline']
+        if len(baseline) > 0:
+            col1.metric("🎯 Baseline CRP",
+                       f"{baseline['counterfactual_crp_bps'].values[0]:.0f} bps",
+                       help="Climate Risk Premium vs. A-rated counterfactual")
+            col2.metric("📉 Baseline Rating",
+                       baseline['scenario_rating_new'].values[0],
+                       f"↓{baseline['notch_change'].values[0]:.0f} notches")
+
+        col3.metric("📈 Max CRP", f"{df['counterfactual_crp_bps'].max():.0f} bps")
+        col4.metric("🔻 Max Downgrade", f"{df['notch_change'].max():.0f} notches")
+
+        st.markdown("---")
+
+    # Architecture diagram
     col1, col2 = st.columns([2, 1])
-    
+
     with col1:
         st.markdown("""
-        ### 📊 Data Flow Diagram
-        
+        ### 📊 Model Architecture
+
         ```
         ┌─────────────────────────────────────────────────────────────┐
-        │                      INPUT DATA (CSV)                        │
-        │  plant_parameters, transition_scenarios, physical_scenarios  │
-        │  korea_power_plan, market_scenarios, financing_parameters    │
+        │                      INPUT DATA (CSV)                       │
+        │  plant_parameters, carbon_prices, climada_hazards           │
         └─────────────────────────────┬───────────────────────────────┘
                                       │
                       ┌───────────────┴───────────────┐
-                      │                               │
                       ▼                               ▼
               ┌───────────────┐               ┌───────────────┐
-              │  🔄 TRANSITION │               │  🌡️ PHYSICAL   │
+              │  TRANSITION   │               │   PHYSICAL    │
               │    MODULE     │               │    MODULE     │
-              │               │               │               │
-              │ • Dispatch    │               │ • Wildfire    │
-              │ • Carbon $    │               │ • Flood       │
-              │ • Retirement  │               │ • Sea Level   │
+              │ • Carbon $    │               │ • Wildfire    │
+              │ • Dispatch    │               │ • Flood/SLR   │
+              │ • 74% impact  │               │ • Literature  │
               └───────┬───────┘               └───────┬───────┘
-                      │                               │
-                      │    transition_results.csv     │  physical_results.csv
                       │                               │
                       └───────────────┬───────────────┘
                                       ▼
                               ┌───────────────┐
-                              │  💰 CASHFLOW   │
+                              │   CASHFLOW    │
                               │    MODULE     │
-                              │               │
                               │ • Revenue     │
-                              │ • Fuel Cost   │
                               │ • EBITDA      │
+                              │ • FCF         │
                               └───────┬───────┘
-                                      │
-                                      │ cashflow_results.csv
                                       ▼
                               ┌───────────────┐
-                              │  📈 CREDIT    │
-                              │    MODULE     │
-                              │               │
-                              │ • DSCR        │
-                              │ • Rating      │
-                              │ • Spread      │
+                              │CREDIT RATING  │
+                              │  (AAA → D)    │
+                              │ • DSCR-based  │
+                              │ • Distressed  │
                               └───────┬───────┘
-                                      │
-                                      │ credit_results.csv
                                       ▼
                               ┌───────────────┐
-                              │  🎯 FINAL     │
-                              │   RESULTS     │
+                              │     CRP       │
+                              │ vs Counter-   │
+                              │   factual     │
+                              │ 1,020-3,500   │
+                              │     bps       │
                               └───────────────┘
-                                      │
-                                      ▼
-                           model_results.csv + Excel
         ```
         """)
-    
+
     with col2:
-        st.markdown("### 📁 Module Status")
-        results = load_module_results(project_root)
-        
-        modules = [
-            ("🔄 Transition", "transition"),
-            ("🌡️ Physical", "physical"),
-            ("💰 Cashflow", "cashflow"),
-            ("📈 Credit", "credit"),
-            ("🎯 Combined", "combined"),
-        ]
-        
-        for name, key in modules:
-            if key in results:
-                st.success(f"**{name}**: {len(results[key])} rows ✓")
-            else:
-                st.error(f"**{name}**: Not found ✗")
-        
-        if not results:
-            st.warning("⚠️ Run the model first!")
-    
-    # Key insights
+        st.markdown("### 📁 Data Status")
+
+        # Check what data is available
+        if df is not None:
+            st.success(f"✅ **Scenarios**: {len(df)} loaded")
+        else:
+            st.error("❌ **Scenarios**: Not found")
+
+        cashflows = load_all_cashflows()
+        if cashflows:
+            st.success(f"✅ **Cashflows**: {len(cashflows)} scenarios")
+        else:
+            st.warning("⚠️ **Cashflows**: None found")
+
+        ratings = load_credit_ratings()
+        if ratings is not None:
+            st.success(f"✅ **Ratings**: {len(ratings)} rows")
+        else:
+            st.warning("⚠️ **Ratings**: Not found")
+
+    # Key concepts
     st.markdown("---")
-    st.subheader("🎯 Key Model Concepts")
-    
+    st.subheader("🎯 Key Concepts")
+
     col1, col2, col3 = st.columns(3)
-    
+
     with col1:
         st.markdown("""
-        #### 🔄 Transition Risk
-        Energy policy impacts from Korea's Power Plan:
-        - Dispatch reduction: 85% → 20% by 2050
-        - Carbon price escalation to $150/tCO2
-        - Early retirement pressure from 11th Plan
+        #### 🔄 Transition Risk (74%)
+        - K-ETS carbon pricing: $8→$75/tCO2
+        - Dispatch reduction from Power Plan
+        - Carbon costs exceed revenue impact
         """)
-    
+
     with col2:
         st.markdown("""
-        #### 🌡️ Physical Risk
-        CLIMADA-based climate hazards:
-        - **Wildfire**: 1.2% → 4% outage rate
-        - **Flood**: 0.2% → 0.6% outage rate
-        - **Sea Level Rise**: 0 → 0.7m by 2060
+        #### 🌡️ Physical Risk (26%)
+        - Wildfire: 1-5% outage rate
+        - Flood: 1-6% outage rate
+        - Literature-backed parameters
         """)
-    
+
     with col3:
         st.markdown("""
         #### 📈 Credit Death Spiral
-        Endogenous feedback loop (AAA→D scale):
         1. Carbon costs → Negative EBITDA
-        2. Negative EBITDA → Low/Negative DSCR
-        3. Low DSCR → Distressed rating (CCC/CC/C/D)
-        4. Distressed → High spread (900-5000 bps)
-        5. CRP = 1,000-3,500 bps vs counterfactual
+        2. Low DSCR → Distressed rating
+        3. CC/C/D → 1,500-5,000 bps spread
+        4. **CRP = 1,020-3,500 bps**
         """)
 
 
 # =============================================================================
-# INPUT DATA PAGE  
+# PAGE: SCENARIO COMPARISON
 # =============================================================================
 
-def page_input_data():
-    """Input Data Documentation page."""
-    st.header("📁 Input Data")
-    
-    tab1, tab2, tab3 = st.tabs(["📖 Documentation", "📊 Data Tables", "📈 Visualizations"])
-    
-    with tab1:
-        doc = load_documentation("INPUT_DATA_DOCUMENTATION.md")
-        st.markdown(doc)
-    
-    with tab2:
-        inputs = load_input_data(project_root)
-        
-        st.subheader("🏭 Plant Parameters")
-        plant_dict = inputs['plant'].to_dict()
-        st.dataframe(pd.DataFrame([{"Parameter": k, "Value": v} for k, v in plant_dict.items()]), 
-                     use_container_width=True, height=300)
-        
-        st.subheader("🔄 Transition Scenarios")
-        trans_rows = [{"Scenario": n, "Dispatch Penalty": f"{t.dispatch_penalty:.0%}", 
-                       "Retirement Years": t.retirement_years} 
-                      for n, t in inputs['transition'].items()]
-        st.dataframe(pd.DataFrame(trans_rows), use_container_width=True)
-        
-        st.subheader("🌡️ Physical Scenarios (CLIMADA)")
-        phys_rows = [{"Scenario": n, "RCP": p.rcp_scenario, "Year": p.target_year,
-                      "Wildfire": f"{p.wildfire_outage_rate:.1%}", "Flood": f"{p.flood_outage_rate:.2%}"}
-                     for n, p in list(inputs['physical'].items())[:8]]
-        st.dataframe(pd.DataFrame(phys_rows), use_container_width=True)
-        
-        st.subheader("📋 Korea Power Plan")
-        st.dataframe(inputs['power_plan'], use_container_width=True, height=300)
-    
-    with tab3:
-        inputs = load_input_data(project_root)
-        plan_df = inputs['power_plan']
-        
-        fig = px.line(plan_df, x="year", y="implied_cf_samcheok", color="scenario_type",
-                      title="Coal Dispatch Trajectory (전력수급계획)")
-        fig.add_hline(y=0.5, line_dash="dash", line_color="red", annotation_text="Economic Threshold")
-        st.plotly_chart(fig, use_container_width=True)
+def page_scenario_comparison():
+    """Scenario Comparison - Main CRP Results."""
+    st.header("📊 Scenario Comparison")
 
-
-# =============================================================================
-# MODULE RESULT PAGES
-# =============================================================================
-
-def page_transition_results():
-    """Transition Results page."""
-    st.header("🔄 Transition Risk Results")
-    st.markdown("""
-    **Module outputs:** Capacity factor by year, carbon price trajectory, operating status
-    
-    **Sources:** Korea 10th/11th Power Plan, IEA carbon price scenarios
-    """)
-    
-    results = load_module_results(project_root)
-    if "transition" not in results:
-        st.warning("⚠️ No transition results. Run the model first!")
+    df = load_scenario_comparison()
+    if df is None:
+        st.warning("⚠️ No scenario comparison data. Run the model first!")
+        st.code("python -c \"from src.pipeline.runner import CRPModelRunner; "
+               "from pathlib import Path; "
+               "r = CRPModelRunner(Path.cwd()); "
+               "results = r.run_multi_scenario(); "
+               "r.export_results(results, Path('data/processed'))\"")
         return
-    
-    df = results["transition"]
-    
-    # Metrics
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Starting CF", f"{df['capacity_factor'].iloc[0]:.0%}")
-    col2.metric("Final CF", f"{df['capacity_factor'].iloc[-1]:.0%}")
-    col3.metric("Operating Years", df['operating_flag'].sum())
-    col4.metric("Max Carbon", f"${df['carbon_price_usd_ton'].max():.0f}/tCO2")
-    
-    # Charts
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = px.area(df, x="year", y="capacity_factor", title="📉 Capacity Factor Decline",
-                      color_discrete_sequence=[COLORS["transition"]])
-        fig.add_hline(y=0.5, line_dash="dash", line_color="red", annotation_text="Economic Threshold")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        fig = px.line(df, x="year", y="carbon_price_usd_ton", title="💨 Carbon Price",
-                      color_discrete_sequence=[COLORS["danger"]])
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with st.expander("📊 Raw Data"):
-        st.dataframe(df, use_container_width=True)
-        st.download_button("📥 Download CSV", df.to_csv(index=False), "transition_results.csv")
 
-
-def page_physical_results():
-    """Physical Risk Results page."""
-    st.header("🌡️ Physical Risk Results")
     st.markdown("""
-    **Module outputs:** Wildfire outage, flood outage, SLR derate, compound multiplier
-    
-    **Sources:** ETH CLIMADA, KMA Climate Assessment, IPCC AR6
-    """)
-    
-    results = load_module_results(project_root)
-    if "physical" not in results:
-        st.warning("⚠️ No physical results. Run the model first!")
-        return
-    
-    df = results["physical"]
-    
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Wildfire", f"{df['wildfire_outage_rate'].mean():.1%}")
-    col2.metric("Flood", f"{df['flood_outage_rate'].mean():.2%}")
-    col3.metric("Total Outage", f"{df['total_outage_rate'].mean():.1%}")
-    col4.metric("Max SLR", f"{df['slr_meters'].max():.2f}m")
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df["year"], y=df["wildfire_outage_rate"]*100, 
-                                  name="🔥 Wildfire", fill='tozeroy'))
-        fig.add_trace(go.Scatter(x=df["year"], y=df["flood_outage_rate"]*100, 
-                                  name="🌊 Flood", fill='tozeroy'))
-        fig.update_layout(title="Outage Rates by Hazard", yaxis_title="Outage Rate (%)")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        fig = px.line(df, x="year", y="slr_meters", title="🌊 Sea Level Rise")
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with st.expander("📊 Raw Data"):
-        st.dataframe(df, use_container_width=True)
-        st.download_button("📥 Download CSV", df.to_csv(index=False), "physical_results.csv")
+    **Counterfactual Baseline:** A-rated (no-carbon world) - 150 bps spread
 
-
-def page_cashflow_results():
-    """Cashflow Results page."""
-    st.header("💰 Cashflow Results")
-    st.markdown("""
-    **Module outputs:** Revenue, fuel cost, carbon cost, OPEX, EBITDA, FCF by year
-    
-    **Calculation:** Revenue = MWh × Price, EBITDA = Revenue - Fuel - Carbon - OPEX
+    CRP = Climate Risk Premium = Additional cost of capital when climate risks are priced in
     """)
-    
-    results = load_module_results(project_root)
-    if "cashflow" not in results:
-        st.warning("⚠️ No cashflow results. Run the model first!")
-        return
-    
-    df = results["cashflow"]
-    
-    # Add millions columns
-    for col in ["revenue_usd", "fuel_cost_usd", "carbon_cost_usd", "ebitda_usd", "fcf_usd"]:
-        if col in df.columns:
-            df[col + "_M"] = df[col] / 1e6
-    
+
+    # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Total Revenue", f"${df['revenue_usd_M'].sum()/1000:.1f}B")
-    col2.metric("Total EBITDA", f"${df['ebitda_usd_M'].sum()/1000:.1f}B")
-    col3.metric("Total Carbon Cost", f"${df['carbon_cost_usd_M'].sum()/1000:.1f}B")
-    col4.metric("Total FCF", f"${df['fcf_usd_M'].sum()/1000:.1f}B")
-    
-    fig = px.bar(df, x="year", y="ebitda_usd_M", title="📊 EBITDA by Year",
-                 color="ebitda_usd_M", color_continuous_scale=["red", "yellow", "green"])
+    baseline = df[df['scenario'] == 'baseline']
+    if len(baseline) > 0:
+        col1.metric("Baseline CRP", f"{baseline['counterfactual_crp_bps'].values[0]:.0f} bps")
+        col2.metric("Baseline Rating", baseline['scenario_rating_new'].values[0])
+    col3.metric("Max CRP", f"{df['counterfactual_crp_bps'].max():.0f} bps")
+    col4.metric("Scenarios", len(df))
+
+    # CRP Bar Chart
+    st.subheader("📈 Climate Risk Premium by Scenario")
+
+    # Sort by CRP for better visualization
+    df_sorted = df.sort_values('counterfactual_crp_bps', ascending=True)
+
+    fig = px.bar(
+        df_sorted,
+        x='scenario',
+        y='counterfactual_crp_bps',
+        color='scenario_rating_new',
+        color_discrete_map=RATING_COLORS,
+        title="CRP vs. Counterfactual (A-rated = 150 bps)",
+        labels={'counterfactual_crp_bps': 'CRP (basis points)', 'scenario': 'Scenario',
+                'scenario_rating_new': 'Rating'}
+    )
+    fig.add_hline(y=1000, line_dash="dash", line_color="orange",
+                  annotation_text="1,000 bps threshold")
+    fig.update_layout(xaxis_tickangle=-45)
     st.plotly_chart(fig, use_container_width=True)
-    
+
+    # Rating Migration
+    st.subheader("📉 Credit Rating Migration")
+
     col1, col2 = st.columns(2)
+
     with col1:
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x=df["year"], y=df["revenue_usd_M"], name="Revenue", line=dict(color="green")))
-        fig.add_trace(go.Scatter(x=df["year"], y=df["fuel_cost_usd_M"], name="Fuel", line=dict(color="red")))
-        fig.add_trace(go.Scatter(x=df["year"], y=df["carbon_cost_usd_M"], name="Carbon", line=dict(color="orange")))
-        fig.update_layout(title="💵 Revenue vs Costs", yaxis_title="$ Million")
+        fig = px.bar(
+            df_sorted,
+            x='scenario',
+            y='notch_change',
+            color='scenario_rating_new',
+            color_discrete_map=RATING_COLORS,
+            title="Rating Notches Down from Counterfactual (A)",
+            labels={'notch_change': 'Notches Down', 'scenario': 'Scenario'}
+        )
+        fig.update_layout(xaxis_tickangle=-45)
         st.plotly_chart(fig, use_container_width=True)
-    
+
     with col2:
-        selected_year = st.selectbox("Waterfall Year", sorted(df["year"].unique()), index=5)
-        yr = df[df["year"] == selected_year].iloc[0]
-        fig = go.Figure(go.Waterfall(
-            x=["Revenue", "Fuel", "Carbon", "OPEX", "EBITDA"],
-            y=[yr["revenue_usd_M"], -yr["fuel_cost_usd_M"], -yr["carbon_cost_usd_M"], 
-               -yr.get("opex_usd", 0)/1e6, yr["ebitda_usd_M"]],
-            measure=["relative", "relative", "relative", "relative", "total"]
-        ))
-        fig.update_layout(title=f"Cashflow Waterfall - {selected_year}")
+        fig = px.scatter(
+            df,
+            x='avg_dscr',
+            y='counterfactual_crp_bps',
+            color='scenario_rating_new',
+            color_discrete_map=RATING_COLORS,
+            size='spread_bps',
+            hover_name='scenario',
+            title="CRP vs. DSCR",
+            labels={'avg_dscr': 'Average DSCR', 'counterfactual_crp_bps': 'CRP (bps)'}
+        )
+        fig.add_vline(x=1.0, line_dash="dash", line_color="red",
+                     annotation_text="DSCR = 1.0x")
         st.plotly_chart(fig, use_container_width=True)
-    
-    with st.expander("📊 Raw Data"):
-        st.dataframe(df, use_container_width=True)
-        st.download_button("📥 Download CSV", df.to_csv(index=False), "cashflow_results.csv")
+
+    # Summary Table
+    st.subheader("📋 Summary Table")
+
+    display_cols = ['scenario', 'scenario_rating_new', 'spread_bps', 'avg_dscr',
+                   'counterfactual_crp_bps', 'notch_change', 'rating_migration',
+                   'npv_million', 'wacc_adjusted_pct']
+    available_cols = [c for c in display_cols if c in df.columns]
+
+    # Format for display
+    df_display = df[available_cols].copy()
+    if 'npv_million' in df_display.columns:
+        df_display['npv_million'] = df_display['npv_million'].apply(lambda x: f"${x:,.0f}M")
+    if 'wacc_adjusted_pct' in df_display.columns:
+        df_display['wacc_adjusted_pct'] = df_display['wacc_adjusted_pct'].apply(lambda x: f"{x:.1f}%")
+
+    st.dataframe(df_display, use_container_width=True)
+
+    # Download
+    st.download_button(
+        "📥 Download Full Results",
+        df.to_csv(index=False),
+        "scenario_comparison.csv",
+        use_container_width=True
+    )
 
 
-def page_credit_results():
-    """Credit Rating Results page."""
-    st.header("📈 Credit Rating Results")
-    st.markdown("""
-    **Module outputs:** DSCR, credit rating (AAA-D scale), spread (bps), cost of debt
+# =============================================================================
+# PAGE: CASHFLOW ANALYSIS
+# =============================================================================
 
-    **Methodology:** Enhanced KIS methodology with:
-    - Extended rating scale: AAA to D (10 levels)
-    - DSCR-based assessment (primary metric for project finance)
-    - Negative EBITDA handling (distressed ratings CCC, CC, C, D)
-    - Counterfactual baseline comparison (vs. A-rated no-carbon world)
-    """)
-    
-    results = load_module_results(project_root)
-    if "credit" not in results:
-        st.warning("⚠️ No credit results. Run the model first!")
+def page_cashflow_analysis():
+    """Cashflow Analysis - Time Series by Scenario."""
+    st.header("💰 Cashflow Analysis")
+
+    cashflows = load_all_cashflows()
+    if not cashflows:
+        st.warning("⚠️ No cashflow data found.")
         return
-    
-    df = results["credit"]
-    valid_dscr = df[df['dscr'] < 100]['dscr']
-    
+
+    # Scenario selector
+    scenarios = list(cashflows.keys())
+    selected = st.selectbox("Select Scenario", scenarios, index=scenarios.index("baseline") if "baseline" in scenarios else 0)
+
+    df = cashflows[selected]
+
+    # Check for year column
+    year_col = 'year' if 'year' in df.columns else df.columns[0]
+
+    st.markdown(f"**Scenario:** {selected}")
+
+    # Summary metrics
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Average DSCR", f"{valid_dscr.mean():.2f}x")
-    col2.metric("Minimum DSCR", f"{valid_dscr.min():.2f}x")
-    col3.metric("Modal Rating", df["credit_rating"].mode()[0])
-    col4.metric("Max Spread", f"{df['spread_bps'].max():.0f} bps")
-    
+
+    if 'revenue' in df.columns:
+        col1.metric("Total Revenue", f"${df['revenue'].sum()/1e9:.1f}B")
+    if 'ebitda' in df.columns:
+        col2.metric("Total EBITDA", f"${df['ebitda'].sum()/1e9:.1f}B")
+    if 'carbon_cost' in df.columns:
+        col3.metric("Total Carbon Cost", f"${df['carbon_cost'].sum()/1e9:.1f}B")
+    if 'fcf' in df.columns:
+        col4.metric("Total FCF", f"${df['fcf'].sum()/1e9:.1f}B")
+
+    # EBITDA chart
+    if 'ebitda' in df.columns:
+        st.subheader("📊 EBITDA Over Time")
+        fig = px.bar(
+            df, x=year_col, y='ebitda',
+            title=f"EBITDA - {selected}",
+            color='ebitda',
+            color_continuous_scale=['red', 'yellow', 'green']
+        )
+        fig.add_hline(y=0, line_dash="solid", line_color="black")
+        st.plotly_chart(fig, use_container_width=True)
+
+    # Revenue vs Costs
     col1, col2 = st.columns(2)
+
     with col1:
-        fig = px.line(df, x="year", y="dscr", title="📊 DSCR Over Time")
-        fig.add_hline(y=1.5, line_dash="dash", line_color="green", annotation_text="Investment Grade")
-        fig.add_hline(y=1.0, line_dash="dash", line_color="red", annotation_text="Default")
-        fig.update_yaxes(range=[0, min(5, valid_dscr.max() * 1.2)])
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        fig = px.scatter(df, x="year", y="credit_rating", title="📉 Credit Rating Migration",
-                         color="credit_rating", size_max=15)
-        st.plotly_chart(fig, use_container_width=True)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        fig = px.area(df, x="year", y="spread_bps", title="📈 Credit Spread",
-                      color_discrete_sequence=[COLORS["danger"]])
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with col2:
-        fig = px.line(df, x="year", y="cost_of_debt", title="💵 Cost of Debt")
-        fig.update_yaxes(tickformat='.1%')
-        st.plotly_chart(fig, use_container_width=True)
-    
-    with st.expander("📊 Raw Data"):
-        st.dataframe(df, use_container_width=True)
-        st.download_button("📥 Download CSV", df.to_csv(index=False), "credit_results.csv")
-
-
-def page_final_analysis():
-    """Final Combined Analysis page."""
-    st.header("🎯 Final Analysis - Climate Risk Premium")
-
-    # Try to load scenario comparison from processed data
-    scenario_path = project_root / "data" / "processed" / "scenario_comparison.csv"
-    if scenario_path.exists():
-        df = pd.read_csv(scenario_path)
-
-        st.subheader("📊 Scenario Comparison - Counterfactual CRP Analysis")
-        st.markdown("""
-        **Counterfactual Baseline:** A-rated (no-carbon world) - 150 bps spread
-
-        CRP measures the additional cost of capital when climate risks are priced in.
-        """)
-
-        # Key metrics
-        col1, col2, col3, col4 = st.columns(4)
-        if 'counterfactual_crp_bps' in df.columns:
-            baseline_crp = df[df['scenario'] == 'baseline']['counterfactual_crp_bps'].values
-            max_crp = df['counterfactual_crp_bps'].max()
-            col1.metric("🎯 Baseline CRP", f"{baseline_crp[0]:.0f} bps" if len(baseline_crp) > 0 else "N/A")
-            col2.metric("📈 Max CRP", f"{max_crp:.0f} bps")
-
-        if 'scenario_rating_new' in df.columns:
-            col3.metric("📉 Worst Rating", df['scenario_rating_new'].iloc[-1] if len(df) > 0 else "N/A")
-
-        if 'notch_change' in df.columns:
-            col4.metric("🔻 Max Downgrade", f"{df['notch_change'].max():.0f} notches")
-
-        # CRP comparison chart
-        if 'counterfactual_crp_bps' in df.columns:
-            st.subheader("📈 Climate Risk Premium by Scenario")
-            fig = px.bar(df, x='scenario', y='counterfactual_crp_bps',
-                        color='scenario_rating_new' if 'scenario_rating_new' in df.columns else None,
-                        title="CRP vs. Counterfactual (A-rated baseline)",
-                        labels={'counterfactual_crp_bps': 'CRP (basis points)', 'scenario': 'Scenario'})
-            fig.add_hline(y=1000, line_dash="dash", line_color="orange", annotation_text="1000 bps threshold")
+        if all(c in df.columns for c in ['revenue', 'fuel_cost', 'carbon_cost']):
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=df[year_col], y=df['revenue']/1e6,
+                                    name="Revenue", line=dict(color="green")))
+            fig.add_trace(go.Scatter(x=df[year_col], y=df['fuel_cost']/1e6,
+                                    name="Fuel Cost", line=dict(color="red")))
+            fig.add_trace(go.Scatter(x=df[year_col], y=df['carbon_cost']/1e6,
+                                    name="Carbon Cost", line=dict(color="orange")))
+            fig.update_layout(title="Revenue vs Costs ($M)", yaxis_title="$ Million")
             st.plotly_chart(fig, use_container_width=True)
 
-        # Rating migration table
-        if 'rating_migration' in df.columns:
-            st.subheader("📉 Credit Rating Migration")
-            migration_cols = ['scenario', 'counterfactual_rating', 'scenario_rating_new',
-                            'notch_change', 'rating_migration', 'counterfactual_crp_bps']
-            available_cols = [c for c in migration_cols if c in df.columns]
-            st.dataframe(df[available_cols], use_container_width=True)
+    with col2:
+        # Waterfall for selected year
+        years = sorted(df[year_col].unique())
+        selected_year = st.selectbox("Waterfall Year", years, index=min(5, len(years)-1))
+        yr_data = df[df[year_col] == selected_year].iloc[0]
 
-        # Full data
-        st.subheader("📋 Complete Results")
-        st.dataframe(df, use_container_width=True, height=400)
+        if all(c in df.columns for c in ['revenue', 'fuel_cost', 'carbon_cost', 'ebitda']):
+            opex = yr_data.get('opex', yr_data.get('fixed_opex', 0))
+            fig = go.Figure(go.Waterfall(
+                x=["Revenue", "Fuel", "Carbon", "OPEX", "EBITDA"],
+                y=[yr_data['revenue']/1e6, -yr_data['fuel_cost']/1e6,
+                   -yr_data['carbon_cost']/1e6, -opex/1e6, yr_data['ebitda']/1e6],
+                measure=["relative", "relative", "relative", "relative", "total"],
+                connector={"line": {"color": "rgb(63, 63, 63)"}}
+            ))
+            fig.update_layout(title=f"Waterfall - {selected_year}")
+            st.plotly_chart(fig, use_container_width=True)
 
-        st.download_button("📥 Download scenario_comparison.csv", df.to_csv(index=False),
-                          "scenario_comparison.csv", use_container_width=True)
-    else:
-        # Fallback to old combined results
-        results = load_module_results(project_root)
-        if "combined" not in results:
-            st.warning("⚠️ No results found. Run the model first!")
-            return
+    # Raw data
+    with st.expander("📊 Raw Data"):
+        st.dataframe(df, use_container_width=True)
+        st.download_button("📥 Download", df.to_csv(index=False), f"cashflow_{selected}.csv")
 
-        df = results["combined"]
 
-        col1, col2, col3, col4, col5 = st.columns(5)
-        col1.metric("💵 Total Revenue", f"${df.get('revenue_usd', pd.Series([0])).sum() / 1e9:.1f}B")
-        col2.metric("📅 Operating Years", len(df[df.get("operating_flag", pd.Series([1]*len(df))) == 1]))
-        col3.metric("📈 Avg DSCR", f"{df[df.get('dscr', pd.Series([0]*len(df))) < 100]['dscr'].mean():.2f}x")
-        col4.metric("🏦 Modal Rating", df.get("credit_rating", pd.Series(["N/A"])).mode()[0])
-        col5.metric("📊 Avg Spread", f"{df.get('spread_bps', pd.Series([0])).mean():.0f} bps")
+# =============================================================================
+# PAGE: CREDIT RATING ANALYSIS
+# =============================================================================
 
-        st.subheader("📋 Complete Results")
-        st.dataframe(df, use_container_width=True, height=400)
+def page_credit_analysis():
+    """Credit Rating Analysis."""
+    st.header("📈 Credit Rating Analysis")
 
-        col1, col2 = st.columns(2)
-        with col1:
-            st.download_button("📥 Download model_results.csv", df.to_csv(index=False),
-                              "model_results.csv", use_container_width=True)
-        with col2:
-            excel_path = project_root / "results" / "Climate_Risk_Premium_Report.xlsx"
-            if excel_path.exists():
-                with open(excel_path, "rb") as f:
-                    st.download_button("📥 Download Excel Report", f.read(),
-                                      "Climate_Risk_Premium_Report.xlsx", use_container_width=True)
+    st.markdown("""
+    **Enhanced Methodology:**
+    - Extended rating scale: AAA to D (10 levels)
+    - DSCR-based assessment (primary metric)
+    - Handles negative EBITDA with distressed ratings (CCC, CC, C, D)
+    - Counterfactual comparison vs. A-rated no-carbon world
+    """)
 
+    df = load_scenario_comparison()
+    if df is None:
+        st.warning("⚠️ No data. Run the model first!")
+        return
+
+    # Rating distribution
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.subheader("📊 Rating Distribution")
+        rating_counts = df['scenario_rating_new'].value_counts()
+        fig = px.pie(values=rating_counts.values, names=rating_counts.index,
+                    title="Scenarios by Rating",
+                    color=rating_counts.index,
+                    color_discrete_map=RATING_COLORS)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        st.subheader("📈 Spread by Rating")
+        fig = px.bar(
+            df.sort_values('spread_bps'),
+            x='scenario',
+            y='spread_bps',
+            color='scenario_rating_new',
+            color_discrete_map=RATING_COLORS,
+            title="Credit Spread (bps)"
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig, use_container_width=True)
+
+    # DSCR Analysis
+    st.subheader("📉 DSCR Analysis")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        fig = px.bar(
+            df.sort_values('avg_dscr', ascending=False),
+            x='scenario',
+            y='avg_dscr',
+            color='scenario_rating_new',
+            color_discrete_map=RATING_COLORS,
+            title="Average DSCR by Scenario"
+        )
+        fig.add_hline(y=1.3, line_dash="dash", line_color="green",
+                     annotation_text="Investment Grade (1.3x)")
+        fig.add_hline(y=1.0, line_dash="dash", line_color="red",
+                     annotation_text="Default (1.0x)")
+        fig.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig, use_container_width=True)
+
+    with col2:
+        # DSCR to Rating mapping
+        dscr_thresholds = pd.DataFrame({
+            'DSCR Range': ['< 0', '0-0.5x', '0.5-0.8x', '0.8-1.0x', '1.0-1.1x',
+                          '1.1-1.3x', '1.3-1.6x', '1.6-2.0x', '2.0-2.5x', '> 2.5x'],
+            'Rating': ['D', 'C', 'CC', 'CCC', 'B', 'BB', 'BBB', 'A', 'AA', 'AAA'],
+            'Spread': [5000, 2500, 1500, 900, 600, 400, 250, 150, 100, 50]
+        })
+        st.markdown("**DSCR → Rating Thresholds**")
+        st.dataframe(dscr_thresholds, use_container_width=True, hide_index=True)
+
+    # Component ratings
+    st.subheader("🔍 Component Ratings")
+
+    component_cols = ['capacity_rating', 'profitability_rating', 'coverage_rating',
+                     'dscr_rating', 'net_debt_leverage_rating']
+    available = [c for c in component_cols if c in df.columns]
+
+    if available:
+        # Melt for visualization
+        df_melt = df[['scenario'] + available].melt(
+            id_vars=['scenario'],
+            var_name='Component',
+            value_name='Rating'
+        )
+        df_melt['Component'] = df_melt['Component'].str.replace('_rating', '')
+
+        fig = px.bar(
+            df_melt,
+            x='scenario',
+            y='Rating',
+            color='Component',
+            barmode='group',
+            title="Component Ratings by Scenario"
+        )
+        fig.update_layout(xaxis_tickangle=-45)
+        st.plotly_chart(fig, use_container_width=True)
+
+
+# =============================================================================
+# PAGE: RUN MODEL
+# =============================================================================
 
 def page_run_model():
     """Run Model page."""
     st.header("⚙️ Run Model")
-    
-    inputs = load_input_data(project_root)
-    
+
+    st.markdown("""
+    Run the CRP model pipeline to generate fresh results.
+
+    **Pipeline steps:**
+    1. Load scenarios from CSV
+    2. Calculate transition & physical adjustments
+    3. Generate cashflow time series
+    4. Assess credit ratings (AAA-D)
+    5. Calculate CRP vs. counterfactual
+    """)
+
     col1, col2 = st.columns(2)
+
     with col1:
-        st.subheader("🔄 Transition Settings")
-        transition = st.selectbox("Transition Scenario", list(inputs['transition'].keys()))
-        power_plan = st.selectbox("Power Plan", ["official_10th_plan", "official_11th_plan", "none"])
-    
+        st.subheader("📋 Default Scenarios")
+        st.markdown("""
+        - baseline
+        - moderate_transition
+        - aggressive_transition
+        - moderate_physical
+        - high_physical
+        - combined_moderate
+        - combined_aggressive
+        - low_demand
+        - severe_drought
+        """)
+
     with col2:
-        st.subheader("🌡️ Physical Settings")
-        physical = st.selectbox("Physical Scenario", list(inputs['physical'].keys())[:8])
-        col_a, col_b = st.columns(2)
-        start_year = col_a.number_input("Start Year", 2024, 2050, 2024)
-        end_year = col_b.number_input("End Year", 2030, 2100, 2064)
-    
+        st.subheader("🔧 Configuration")
+        st.info("Using default scenario configuration. Edit data/raw/*.csv to customize.")
+
     if st.button("🚀 Run Full Pipeline", type="primary", use_container_width=True):
-        with st.spinner("Running..."):
+        with st.spinner("Running CRP model..."):
             try:
-                results = run_full_pipeline(
-                    base_dir=project_root,
-                    transition_scenario=transition,
-                    power_plan_scenario=power_plan if power_plan != "none" else None,
-                    physical_scenario=physical,
-                    start_year=start_year,
-                    end_year=end_year,
-                    save_outputs=True,
-                )
-                st.success(f"✅ Complete! {len(results['combined'])} rows generated.")
+                from src.pipeline.runner import CRPModelRunner
+
+                runner = CRPModelRunner(project_root)
+                results = runner.run_multi_scenario()
+                paths = runner.export_results(results, project_root / "data" / "processed")
+
+                st.success(f"✅ Complete! {len(results)} scenarios processed.")
+
+                # Show summary
+                st.subheader("📊 Results Summary")
+                for name, result in results.items():
+                    rating = result.credit_rating.overall_rating.name if result.credit_rating else "N/A"
+                    crp = result.financing.crp_bps if result.financing else 0
+                    st.write(f"• **{name}**: Rating={rating}, CRP={crp:.0f} bps")
+
+                # Clear cache to reload data
                 st.cache_data.clear()
+                st.info("Refresh the page to see updated results.")
+
             except Exception as e:
                 st.error(f"❌ Error: {e}")
                 st.exception(e)
@@ -625,39 +620,48 @@ def page_run_model():
 
 def main():
     st.sidebar.title("🔥 Climate Risk Premium")
-    st.sidebar.markdown("**Samcheok Blue Power (2,100 MW)**")
+    st.sidebar.markdown("**Samcheok Blue Power**")
+    st.sidebar.markdown("2,100 MW Coal-Fired")
     st.sidebar.markdown("---")
-    
+
     page = st.sidebar.radio("📑 Navigate", [
         "🏗️ Model Overview",
-        "📁 Input Data",
-        "🔄 Transition Results",
-        "🌡️ Physical Results",
-        "💰 Cashflow Results",
-        "📈 Credit Results",
-        "🎯 Final Analysis",
+        "📊 Scenario Comparison",
+        "💰 Cashflow Analysis",
+        "📈 Credit Rating",
         "⚙️ Run Model",
     ])
-    
+
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 📚 Data Sources")
-    st.sidebar.markdown("• MOTIE 10th/11th Power Plan\n• ETH CLIMADA\n• KIS Rating Methodology")
-    
-    # Progress
-    results = load_module_results(project_root)
-    loaded = sum(1 for k in ["transition", "physical", "cashflow", "credit", "combined"] if k in results)
-    st.sidebar.progress(loaded / 5)
-    st.sidebar.caption(f"{loaded}/5 modules loaded")
-    
+
+    # Data status
+    df = load_scenario_comparison()
+    if df is not None:
+        st.sidebar.success(f"✅ {len(df)} scenarios loaded")
+
+        # Quick stats
+        baseline = df[df['scenario'] == 'baseline']
+        if len(baseline) > 0:
+            st.sidebar.metric("Baseline CRP",
+                            f"{baseline['counterfactual_crp_bps'].values[0]:.0f} bps")
+    else:
+        st.sidebar.warning("⚠️ No data - run model")
+
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 📚 Sources")
+    st.sidebar.markdown("• K-ETS Carbon Pricing\n• CLIMADA Physical\n• KIS Credit Rating")
+
     # Route pages
-    if page == "🏗️ Model Overview": page_model_overview()
-    elif page == "📁 Input Data": page_input_data()
-    elif page == "🔄 Transition Results": page_transition_results()
-    elif page == "🌡️ Physical Results": page_physical_results()
-    elif page == "💰 Cashflow Results": page_cashflow_results()
-    elif page == "📈 Credit Results": page_credit_results()
-    elif page == "🎯 Final Analysis": page_final_analysis()
-    elif page == "⚙️ Run Model": page_run_model()
+    if page == "🏗️ Model Overview":
+        page_model_overview()
+    elif page == "📊 Scenario Comparison":
+        page_scenario_comparison()
+    elif page == "💰 Cashflow Analysis":
+        page_cashflow_analysis()
+    elif page == "📈 Credit Rating":
+        page_credit_analysis()
+    elif page == "⚙️ Run Model":
+        page_run_model()
 
 
 if __name__ == "__main__":
