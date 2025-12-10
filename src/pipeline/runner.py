@@ -21,6 +21,12 @@ from src.risk import (
     assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment,
     calculate_financing_from_rating
 )
+from src.risk.credit_rating import (
+    assess_rating_with_counterfactual,
+    get_counterfactual_baseline_rating,
+    Rating
+)
+from src.risk.financing import calculate_financing_with_counterfactual
 from src.financials import compute_cashflows_timeseries, calculate_metrics, CashFlowTimeSeries, FinancialMetrics
 from src.scenarios.korea_power_plan import load_korea_power_plan_scenarios
 from src.risk.physical import get_physical_risk_scenario
@@ -35,6 +41,7 @@ class ScenarioResult:
     metrics: FinancialMetrics
     financing: FinancingImpact | None = None  # Only for risk scenarios
     credit_rating: RatingAssessment | None = None  # Credit rating assessment
+    counterfactual_crp: Dict[str, Any] | None = None  # Counterfactual-based CRP analysis
 
 
 class CRPModelRunner:
@@ -223,15 +230,20 @@ class CRPModelRunner:
             cash_and_equivalents=cash_and_equivalents,
             total_equity=total_equity,
             total_assets=total_assets,
+            dscr=metrics.avg_dscr,  # Use DSCR from financial metrics
         )
 
         credit_rating = assess_credit_rating(rating_metrics)
+
+        # Calculate counterfactual-based CRP
+        counterfactual_result = assess_rating_with_counterfactual(rating_metrics)
 
         return ScenarioResult(
             scenario_name=scenario_name,
             cashflow=cashflow,
             metrics=metrics,
             credit_rating=credit_rating,
+            counterfactual_crp=counterfactual_result,
         )
 
     def run_multi_scenario(
@@ -279,37 +291,40 @@ class CRPModelRunner:
             if scenario_spec["name"] == "baseline":
                 baseline_result = result
 
-        # Calculate financing impacts for risk scenarios
-        if baseline_result:
-            plant_params = self._get_plant_params()
-            financing_params = self._get_financing_params()
-            total_capex = plant_params.get('total_capex_million', 3200) * 1e6
-            baseline_npv = baseline_result.metrics.npv
-            
-            # Get baseline spread from its rating if available, otherwise default
-            baseline_spread = 150.0
-            if baseline_result.credit_rating:
-                baseline_spread = baseline_result.credit_rating.overall_rating.to_spread_bps()
+        # Calculate financing impacts using counterfactual baseline
+        # Counterfactual = A-rated (no-carbon world) for all scenarios including baseline
+        plant_params = self._get_plant_params()
+        financing_params = self._get_financing_params()
+        total_capex = plant_params.get('total_capex_million', 3200) * 1e6
 
-            for name, result in results.items():
-                if name != "baseline":
-                    risk_npv = result.metrics.npv
-                    npv_loss = baseline_npv - risk_npv
-                    
-                    # Use credit rating spread if available
-                    if result.credit_rating:
-                        rating_spread = result.credit_rating.overall_rating.to_spread_bps()
-                        result.financing = calculate_financing_from_rating(
-                            rating_spread_bps=rating_spread,
-                            baseline_spread_bps=baseline_spread,
-                            npv_loss=npv_loss,
-                            total_capex=total_capex,
-                            params=financing_params
-                        )
-                    else:
-                        # Fallback to old linear model if no rating (shouldn't happen)
-                        el_pct = calculate_expected_loss(baseline_npv, risk_npv, total_capex)
-                        result.financing = map_expected_loss_to_spreads(el_pct, npv_loss, financing_params)
+        # Get counterfactual rating (A = no carbon world)
+        counterfactual_rating = get_counterfactual_baseline_rating()
+        counterfactual_spread = counterfactual_rating.to_spread_bps()
+        counterfactual_notch = counterfactual_rating.value
+
+        for name, result in results.items():
+            # Calculate counterfactual NPV loss (vs. no-carbon world)
+            # For now, use baseline NPV as proxy for counterfactual NPV
+            counterfactual_npv = baseline_result.metrics.npv if baseline_result else result.metrics.npv
+            npv_loss = counterfactual_npv - result.metrics.npv
+
+            if result.credit_rating:
+                scenario_spread = result.credit_rating.overall_rating.to_spread_bps()
+                scenario_notch = result.credit_rating.overall_rating.value
+
+                result.financing = calculate_financing_with_counterfactual(
+                    scenario_spread_bps=scenario_spread,
+                    counterfactual_spread_bps=counterfactual_spread,
+                    npv_loss=max(0, npv_loss),  # Floor at 0
+                    total_capex=total_capex,
+                    params=financing_params,
+                    scenario_notch=scenario_notch,
+                    counterfactual_notch=counterfactual_notch,
+                )
+            else:
+                # Fallback to old linear model if no rating (shouldn't happen)
+                el_pct = calculate_expected_loss(counterfactual_npv, result.metrics.npv, total_capex)
+                result.financing = map_expected_loss_to_spreads(el_pct, npv_loss, financing_params)
 
         return results
 
@@ -340,6 +355,17 @@ class CRPModelRunner:
                 row.update(result.financing.to_dict())
             if result.credit_rating:
                 row.update(result.credit_rating.to_dict())
+            # Add counterfactual CRP data
+            if result.counterfactual_crp:
+                row["counterfactual_rating"] = result.counterfactual_crp.get("counterfactual_rating")
+                row["counterfactual_spread_bps"] = result.counterfactual_crp.get("counterfactual_spread_bps")
+                row["scenario_rating_new"] = result.counterfactual_crp.get("scenario_rating")
+                row["scenario_spread_bps_new"] = result.counterfactual_crp.get("scenario_spread_bps")
+                row["rating_migration"] = result.counterfactual_crp.get("rating_migration")
+                row["notch_change"] = result.counterfactual_crp.get("notch_change")
+                row["counterfactual_crp_bps"] = result.counterfactual_crp.get("crp_bps")
+                row["is_investment_grade"] = result.counterfactual_crp.get("is_investment_grade")
+                row["is_distressed"] = result.counterfactual_crp.get("is_distressed")
             metrics_rows.append(row)
 
         metrics_df = pd.DataFrame(metrics_rows)

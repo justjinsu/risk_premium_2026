@@ -241,11 +241,12 @@ def page_model_overview():
     with col3:
         st.markdown("""
         #### 📈 Credit Death Spiral
-        Endogenous feedback loop:
-        1. Lower EBITDA → Lower DSCR
-        2. Lower DSCR → Rating downgrade
-        3. Lower rating → Higher cost of debt
-        4. Higher interest → Even lower EBITDA
+        Endogenous feedback loop (AAA→D scale):
+        1. Carbon costs → Negative EBITDA
+        2. Negative EBITDA → Low/Negative DSCR
+        3. Low DSCR → Distressed rating (CCC/CC/C/D)
+        4. Distressed → High spread (900-5000 bps)
+        5. CRP = 1,000-3,500 bps vs counterfactual
         """)
 
 
@@ -443,9 +444,13 @@ def page_credit_results():
     """Credit Rating Results page."""
     st.header("📈 Credit Rating Results")
     st.markdown("""
-    **Module outputs:** DSCR, credit rating, spread (bps), cost of debt
-    
-    **Methodology:** KIS (Korea Investors Service) rating thresholds
+    **Module outputs:** DSCR, credit rating (AAA-D scale), spread (bps), cost of debt
+
+    **Methodology:** Enhanced KIS methodology with:
+    - Extended rating scale: AAA to D (10 levels)
+    - DSCR-based assessment (primary metric for project finance)
+    - Negative EBITDA handling (distressed ratings CCC, CC, C, D)
+    - Counterfactual baseline comparison (vs. A-rated no-carbon world)
     """)
     
     results = load_module_results(project_root)
@@ -493,35 +498,87 @@ def page_credit_results():
 
 def page_final_analysis():
     """Final Combined Analysis page."""
-    st.header("🎯 Final Analysis")
-    
-    results = load_module_results(project_root)
-    if "combined" not in results:
-        st.warning("⚠️ No combined results. Run the model first!")
-        return
-    
-    df = results["combined"]
-    
-    col1, col2, col3, col4, col5 = st.columns(5)
-    col1.metric("💵 Total Revenue", f"${df.get('revenue_usd', pd.Series([0])).sum() / 1e9:.1f}B")
-    col2.metric("📅 Operating Years", len(df[df.get("operating_flag", pd.Series([1]*len(df))) == 1]))
-    col3.metric("📈 Avg DSCR", f"{df[df.get('dscr', pd.Series([0]*len(df))) < 100]['dscr'].mean():.2f}x")
-    col4.metric("🏦 Modal Rating", df.get("credit_rating", pd.Series(["N/A"])).mode()[0])
-    col5.metric("📊 Avg Spread", f"{df.get('spread_bps', pd.Series([0])).mean():.0f} bps")
-    
-    st.subheader("📋 Complete Results")
-    st.dataframe(df, use_container_width=True, height=400)
-    
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button("📥 Download model_results.csv", df.to_csv(index=False), 
-                          "model_results.csv", use_container_width=True)
-    with col2:
-        excel_path = project_root / "results" / "Climate_Risk_Premium_Report.xlsx"
-        if excel_path.exists():
-            with open(excel_path, "rb") as f:
-                st.download_button("📥 Download Excel Report", f.read(), 
-                                  "Climate_Risk_Premium_Report.xlsx", use_container_width=True)
+    st.header("🎯 Final Analysis - Climate Risk Premium")
+
+    # Try to load scenario comparison from processed data
+    scenario_path = project_root / "data" / "processed" / "scenario_comparison.csv"
+    if scenario_path.exists():
+        df = pd.read_csv(scenario_path)
+
+        st.subheader("📊 Scenario Comparison - Counterfactual CRP Analysis")
+        st.markdown("""
+        **Counterfactual Baseline:** A-rated (no-carbon world) - 150 bps spread
+
+        CRP measures the additional cost of capital when climate risks are priced in.
+        """)
+
+        # Key metrics
+        col1, col2, col3, col4 = st.columns(4)
+        if 'counterfactual_crp_bps' in df.columns:
+            baseline_crp = df[df['scenario'] == 'baseline']['counterfactual_crp_bps'].values
+            max_crp = df['counterfactual_crp_bps'].max()
+            col1.metric("🎯 Baseline CRP", f"{baseline_crp[0]:.0f} bps" if len(baseline_crp) > 0 else "N/A")
+            col2.metric("📈 Max CRP", f"{max_crp:.0f} bps")
+
+        if 'scenario_rating_new' in df.columns:
+            col3.metric("📉 Worst Rating", df['scenario_rating_new'].iloc[-1] if len(df) > 0 else "N/A")
+
+        if 'notch_change' in df.columns:
+            col4.metric("🔻 Max Downgrade", f"{df['notch_change'].max():.0f} notches")
+
+        # CRP comparison chart
+        if 'counterfactual_crp_bps' in df.columns:
+            st.subheader("📈 Climate Risk Premium by Scenario")
+            fig = px.bar(df, x='scenario', y='counterfactual_crp_bps',
+                        color='scenario_rating_new' if 'scenario_rating_new' in df.columns else None,
+                        title="CRP vs. Counterfactual (A-rated baseline)",
+                        labels={'counterfactual_crp_bps': 'CRP (basis points)', 'scenario': 'Scenario'})
+            fig.add_hline(y=1000, line_dash="dash", line_color="orange", annotation_text="1000 bps threshold")
+            st.plotly_chart(fig, use_container_width=True)
+
+        # Rating migration table
+        if 'rating_migration' in df.columns:
+            st.subheader("📉 Credit Rating Migration")
+            migration_cols = ['scenario', 'counterfactual_rating', 'scenario_rating_new',
+                            'notch_change', 'rating_migration', 'counterfactual_crp_bps']
+            available_cols = [c for c in migration_cols if c in df.columns]
+            st.dataframe(df[available_cols], use_container_width=True)
+
+        # Full data
+        st.subheader("📋 Complete Results")
+        st.dataframe(df, use_container_width=True, height=400)
+
+        st.download_button("📥 Download scenario_comparison.csv", df.to_csv(index=False),
+                          "scenario_comparison.csv", use_container_width=True)
+    else:
+        # Fallback to old combined results
+        results = load_module_results(project_root)
+        if "combined" not in results:
+            st.warning("⚠️ No results found. Run the model first!")
+            return
+
+        df = results["combined"]
+
+        col1, col2, col3, col4, col5 = st.columns(5)
+        col1.metric("💵 Total Revenue", f"${df.get('revenue_usd', pd.Series([0])).sum() / 1e9:.1f}B")
+        col2.metric("📅 Operating Years", len(df[df.get("operating_flag", pd.Series([1]*len(df))) == 1]))
+        col3.metric("📈 Avg DSCR", f"{df[df.get('dscr', pd.Series([0]*len(df))) < 100]['dscr'].mean():.2f}x")
+        col4.metric("🏦 Modal Rating", df.get("credit_rating", pd.Series(["N/A"])).mode()[0])
+        col5.metric("📊 Avg Spread", f"{df.get('spread_bps', pd.Series([0])).mean():.0f} bps")
+
+        st.subheader("📋 Complete Results")
+        st.dataframe(df, use_container_width=True, height=400)
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.download_button("📥 Download model_results.csv", df.to_csv(index=False),
+                              "model_results.csv", use_container_width=True)
+        with col2:
+            excel_path = project_root / "results" / "Climate_Risk_Premium_Report.xlsx"
+            if excel_path.exists():
+                with open(excel_path, "rb") as f:
+                    st.download_button("📥 Download Excel Report", f.read(),
+                                      "Climate_Risk_Premium_Report.xlsx", use_container_width=True)
 
 
 def page_run_model():

@@ -112,10 +112,10 @@ def test_load_climada_hazards():
     assert len(hazards) > 0
     assert 'baseline' in hazards
 
-    # Check baseline has minimal risks
+    # Check baseline has minimal risks (literature-backed values)
     baseline = hazards['baseline']
-    assert baseline.wildfire_outage_rate < 0.02
-    assert baseline.flood_outage_rate < 0.01
+    assert baseline.wildfire_outage_rate <= 0.02  # 1-2% from CAISO data
+    assert baseline.flood_outage_rate <= 0.02     # 1-2% from Seoul flood standards
     assert baseline.slr_capacity_derate < 0.01
 
     # Check high physical scenarios exist

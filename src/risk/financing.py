@@ -1,10 +1,13 @@
 """
 Translate expected losses into financing spreads and Climate Risk Premium (CRP).
+
+ENHANCED (2024-12): Updated to work with extended credit rating scale (AAA to D)
+and counterfactual-based CRP calculation for proper climate risk pricing.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 
 @dataclass
@@ -171,4 +174,76 @@ def calculate_financing_from_rating(
         crp_bps=crp,
         wacc_baseline_pct=wacc_baseline * 100,
         wacc_adjusted_pct=wacc_adjusted * 100,
+    )
+
+
+def calculate_financing_with_counterfactual(
+    scenario_spread_bps: float,
+    counterfactual_spread_bps: float,
+    npv_loss: float,
+    total_capex: float,
+    params: Dict[str, Any],
+    scenario_notch: int = 6,
+    counterfactual_notch: int = 3,
+) -> FinancingImpact:
+    """
+    Calculate financing impact using counterfactual baseline comparison.
+
+    This is the proper approach for Climate Risk Premium calculation:
+    - Counterfactual: Investment-grade rating (A) assuming no carbon pricing
+    - Scenario: Actual rating with all climate risks priced in
+
+    CRP = WACC(scenario) - WACC(counterfactual)
+
+    This ensures meaningful spread differential even when all current
+    scenarios have negative EBITDA (due to carbon costs).
+
+    Args:
+        scenario_spread_bps: Credit spread for the scenario (from Rating.to_spread_bps())
+        counterfactual_spread_bps: Credit spread for counterfactual (default A = 150 bps)
+        npv_loss: Absolute NPV loss (Counterfactual NPV - Scenario NPV)
+        total_capex: Total CAPEX for expected loss % calculation
+        params: Financing parameters
+        scenario_notch: Rating notch for scenario (1=AAA, 10=D)
+        counterfactual_notch: Rating notch for counterfactual (default 3=A)
+
+    Returns:
+        FinancingImpact with CRP calculated against counterfactual
+    """
+    # Extract parameters
+    risk_free_rate = float(params.get("risk_free_rate", 0.03))
+    debt_fraction = float(params.get("debt_fraction", 0.70))
+    equity_fraction = float(params.get("equity_fraction", 0.30))
+    baseline_equity_rate = 0.12
+
+    # Calculate Expected Loss % (for reporting)
+    expected_loss_pct = 0.0
+    if total_capex > 0:
+        expected_loss_pct = max(0.0, (npv_loss / total_capex) * 100)
+
+    # Debt costs from rating spreads
+    counterfactual_debt_rate = risk_free_rate + (counterfactual_spread_bps / 10000)
+    scenario_debt_rate = risk_free_rate + (scenario_spread_bps / 10000)
+
+    # Equity premium scales with rating (0.5% per notch deterioration)
+    equity_premium_per_notch = 0.005
+    notch_diff = scenario_notch - counterfactual_notch
+    equity_premium_pct = notch_diff * (equity_premium_per_notch * 100)  # in percentage points
+    scenario_equity_rate = baseline_equity_rate + (equity_premium_pct / 100)
+
+    # WACC calculations
+    wacc_counterfactual = debt_fraction * counterfactual_debt_rate + equity_fraction * baseline_equity_rate
+    wacc_scenario = debt_fraction * scenario_debt_rate + equity_fraction * scenario_equity_rate
+
+    # CRP = spread differential in basis points
+    crp = (wacc_scenario - wacc_counterfactual) * 10000
+
+    return FinancingImpact(
+        expected_loss_pct=expected_loss_pct,
+        npv_loss_million=npv_loss / 1e6,
+        debt_spread_bps=scenario_spread_bps,
+        equity_premium_pct=equity_premium_pct,
+        crp_bps=crp,
+        wacc_baseline_pct=wacc_counterfactual * 100,  # Counterfactual as baseline
+        wacc_adjusted_pct=wacc_scenario * 100,
     )
