@@ -1,19 +1,23 @@
 """
 Cash-flow engine for baseline vs risk-adjusted scenarios.
+
+Supports:
+- Year-by-year physical risk evolution (CLIMADA hazards)
+- Proper outage modeling (reduces revenue, not adds cost)
+- Efficiency loss from physical risks
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional, TYPE_CHECKING
 import numpy as np
 
 from src.risk import TransitionAdjustments, PhysicalAdjustments
 from src.scenarios import TransitionScenario, MarketScenario
-# Import locally to avoid circular import if possible, or refactor. 
-# metrics.py imports cashflow.py, so importing metrics here causes circular import.
-# We should move calculate_debt_service to a separate module or implement simple logic here.
-# Let's implement simple debt logic here to avoid circular dependency.
 import numpy_financial as npf
+
+if TYPE_CHECKING:
+    from src.risk.physical import YearlyPhysicalAdjustments
 
 
 @dataclass
@@ -67,9 +71,25 @@ def compute_cashflows_timeseries(
     physical_adj: PhysicalAdjustments,
     market_scenario: MarketScenario | None = None,
     start_year: int = 2025,
+    yearly_physical_adj: Optional['YearlyPhysicalAdjustments'] = None,
 ) -> CashFlowTimeSeries:
     """
     Compute annual cash flows over the plant's operating life.
+
+    Args:
+        plant_params: Plant design parameters
+        transition_scenario: Transition risk scenario (for carbon prices)
+        transition_adj: Static transition adjustments
+        physical_adj: Static physical adjustments (used if yearly_physical_adj is None)
+        market_scenario: Optional market scenario
+        start_year: First year of operation
+        yearly_physical_adj: Optional year-by-year physical adjustments for dynamic climate risk
+
+    Physical Risk Modeling:
+        - If yearly_physical_adj is provided, uses dynamic year-by-year hazards
+        - Otherwise, uses static physical_adj for all years
+        - Outages REDUCE revenue (lost sales), not add costs
+        - Efficiency loss reduces effective heat rate
     """
     # Extract plant parameters
     capacity_mw = float(plant_params.get("capacity_mw", 2000))
@@ -79,7 +99,7 @@ def compute_cashflows_timeseries(
     fixed_opex_per_kw = float(plant_params.get("fixed_opex_per_kw_year", 42))
     variable_opex_per_mwh = float(plant_params.get("variable_opex_per_mwh", 4.5))
     emissions_rate = float(plant_params.get("emissions_tCO2_per_mwh", 0.95))
-    
+
     # Financial params for concretization
     total_capex = float(plant_params.get("total_capex_million", 3200)) * 1e6
     useful_life = int(plant_params.get("useful_life", 30))
@@ -92,52 +112,89 @@ def compute_cashflows_timeseries(
     n_years = transition_adj.operating_years
     years = np.arange(start_year, start_year + n_years)
 
-    # Capacity factor adjusted for both transition and physical risks
+    # === PHYSICAL RISK: Get year-by-year or static adjustments ===
+    if yearly_physical_adj is not None:
+        # Dynamic year-by-year physical risks (climate change progression)
+        outage_rates = np.array([
+            yearly_physical_adj.get_adjustment_for_year(int(y)).outage_rate
+            for y in years
+        ])
+        capacity_derates = np.array([
+            yearly_physical_adj.get_adjustment_for_year(int(y)).capacity_derate
+            for y in years
+        ])
+        efficiency_losses = np.array([
+            yearly_physical_adj.get_adjustment_for_year(int(y)).efficiency_loss
+            for y in years
+        ])
+        water_constraints = np.array([
+            yearly_physical_adj.get_adjustment_for_year(int(y)).water_constrained_capacity
+            for y in years
+        ])
+    else:
+        # Static physical risks (same for all years)
+        outage_rates = np.full(n_years, physical_adj.outage_rate)
+        capacity_derates = np.full(n_years, physical_adj.capacity_derate)
+        efficiency_losses = np.full(n_years, physical_adj.efficiency_loss)
+        water_constraints = np.full(n_years, getattr(physical_adj, "water_constrained_capacity", 1.0))
+
+    # === CAPACITY FACTOR CALCULATION ===
     base_cf = transition_adj.capacity_factor
-    
-    # Apply Market Demand factor to Base CF if market scenario exists
+
+    # Apply Market Demand factor if market scenario exists
     if market_scenario:
-        # Demand growth affects utilization
         demand_factors = np.array([market_scenario.get_demand_factor(year, start_year) for year in years])
-        # Assume 1:1 relationship between demand growth and CF for simplicity, capped at 1.0
         base_cf_series = np.minimum(1.0, base_cf * demand_factors)
     else:
         base_cf_series = np.full(n_years, base_cf)
 
-    # Apply Physical Constraints (Derates + Water Constraints)
-    # 1. Subtract derates (efficiency loss)
-    cf_series = base_cf_series * (1 - physical_adj.capacity_derate)
-    
-    # 2. Apply Water Constraint (Hard Cap)
-    # If water is constrained, we cannot exceed the water_constrained_capacity
-    water_cap = getattr(physical_adj, "water_constrained_capacity", 1.0)
-    cf_series = np.minimum(cf_series, water_cap)
-    
+    # Apply capacity derates (year-by-year)
+    cf_series = base_cf_series * (1 - capacity_derates)
+
+    # Apply water constraints (year-by-year hard cap)
+    cf_series = np.minimum(cf_series, water_constraints)
     cf_series = np.maximum(cf_series, 0.0)
 
-    # Annual generation
-    annual_mwh = capacity_mw * 8760 * cf_series
+    # === GENERATION AND REVENUE ===
+    # Potential generation (before outages)
+    potential_mwh = capacity_mw * 8760 * cf_series
 
-    # Revenue
-    # Apply Market Price if scenario exists
+    # Actual generation (after outages reduce availability)
+    # Outage = fraction of time plant is unavailable
+    actual_mwh = potential_mwh * (1 - outage_rates)
+
+    # Revenue is based on ACTUAL generation (outages reduce revenue)
     if market_scenario:
         prices = np.array([market_scenario.get_power_price(year, start_year) for year in years])
     else:
         prices = np.full(n_years, price)
-        
-    revenue = annual_mwh * prices
+
+    revenue = actual_mwh * prices
 
     # Carbon price trajectory
     carbon_prices = np.array([transition_scenario.get_carbon_price(year) for year in years])
 
-    # Costs
-    fuel_costs = annual_mwh * heat_rate * fuel_price
-    variable_opex = annual_mwh * variable_opex_per_mwh
-    fixed_opex = np.full(n_years, capacity_mw * 1000 * fixed_opex_per_kw)
-    carbon_costs = annual_mwh * emissions_rate * carbon_prices
-    outage_costs = annual_mwh * physical_adj.outage_rate * price
+    # === COSTS ===
+    # Fuel costs: affected by efficiency loss (higher heat rate = more fuel)
+    effective_heat_rates = heat_rate * (1 + efficiency_losses)
+    fuel_costs = actual_mwh * effective_heat_rates * fuel_price
 
-    total_costs = fuel_costs + variable_opex + fixed_opex + carbon_costs + outage_costs
+    # Variable O&M: based on actual generation
+    variable_opex = actual_mwh * variable_opex_per_mwh
+
+    # Fixed O&M: constant regardless of generation
+    fixed_opex = np.full(n_years, capacity_mw * 1000 * fixed_opex_per_kw)
+
+    # Carbon costs: based on actual emissions (actual generation × emissions rate)
+    carbon_costs = actual_mwh * emissions_rate * carbon_prices
+
+    # Outage costs: Now represents LOST REVENUE (for reporting), not an actual cash cost
+    # This is the revenue we would have earned but didn't due to outages
+    # We track this separately for transparency, but it's already reflected in reduced revenue
+    outage_costs = potential_mwh * outage_rates * prices  # Lost revenue from outages
+
+    total_costs = fuel_costs + variable_opex + fixed_opex + carbon_costs
+    # Note: outage_costs NOT included in total_costs - it's informational only
 
     # --- Financial Calculations ---
 

@@ -2,15 +2,17 @@
 Physical risk adjustments (wildfire, water stress, temperature).
 
 Updated to integrate CLIMADA hazard data (wildfire, flood, sea level rise).
+Supports year-by-year hazard evolution for dynamic climate risk modeling.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Dict, Any, Optional
+from dataclasses import dataclass, field
+from typing import Dict, Any, Optional, List
+import numpy as np
 
 from src.scenarios import PhysicalScenario
 
-from src.climada.hazards import CLIMADAHazardData
+from src.climada.hazards import CLIMADAHazardData, interpolate_hazard_by_year
 CLIMADA_AVAILABLE = True
 
 
@@ -31,6 +33,77 @@ class PhysicalAdjustments:
     efficiency_loss: float
     water_constrained_capacity: float = 1.0
     notes: str = ""
+
+
+@dataclass
+class YearlyPhysicalAdjustments:
+    """
+    Year-by-year physical risk adjustments for dynamic climate modeling.
+
+    Attributes:
+        years: Array of years
+        outage_rates: Annual outage rate for each year
+        capacity_derates: Capacity derating for each year
+        efficiency_losses: Efficiency loss for each year
+        water_constraints: Water constraint for each year
+        scenario_name: Name of the physical scenario
+    """
+    years: np.ndarray
+    outage_rates: np.ndarray
+    capacity_derates: np.ndarray
+    efficiency_losses: np.ndarray
+    water_constraints: np.ndarray
+    scenario_name: str = ""
+
+    def get_adjustment_for_year(self, year: int) -> PhysicalAdjustments:
+        """Get PhysicalAdjustments for a specific year."""
+        if year in self.years:
+            idx = np.where(self.years == year)[0][0]
+            return PhysicalAdjustments(
+                outage_rate=self.outage_rates[idx],
+                capacity_derate=self.capacity_derates[idx],
+                efficiency_loss=self.efficiency_losses[idx],
+                water_constrained_capacity=self.water_constraints[idx],
+                notes=f"{self.scenario_name} year {year}"
+            )
+        # Interpolate if exact year not found
+        if year < self.years[0]:
+            return PhysicalAdjustments(
+                outage_rate=self.outage_rates[0],
+                capacity_derate=self.capacity_derates[0],
+                efficiency_loss=self.efficiency_losses[0],
+                water_constrained_capacity=self.water_constraints[0],
+                notes=f"{self.scenario_name} (extrapolated)"
+            )
+        if year > self.years[-1]:
+            return PhysicalAdjustments(
+                outage_rate=self.outage_rates[-1],
+                capacity_derate=self.capacity_derates[-1],
+                efficiency_loss=self.efficiency_losses[-1],
+                water_constrained_capacity=self.water_constraints[-1],
+                notes=f"{self.scenario_name} (extrapolated)"
+            )
+        # Linear interpolation
+        idx = np.searchsorted(self.years, year)
+        y0, y1 = self.years[idx-1], self.years[idx]
+        weight = (year - y0) / (y1 - y0)
+        return PhysicalAdjustments(
+            outage_rate=self.outage_rates[idx-1] + weight * (self.outage_rates[idx] - self.outage_rates[idx-1]),
+            capacity_derate=self.capacity_derates[idx-1] + weight * (self.capacity_derates[idx] - self.capacity_derates[idx-1]),
+            efficiency_loss=self.efficiency_losses[idx-1] + weight * (self.efficiency_losses[idx] - self.efficiency_losses[idx-1]),
+            water_constrained_capacity=self.water_constraints[idx-1] + weight * (self.water_constraints[idx] - self.water_constraints[idx-1]),
+            notes=f"{self.scenario_name} (interpolated)"
+        )
+
+    @property
+    def average_outage_rate(self) -> float:
+        """Average outage rate over all years."""
+        return float(np.mean(self.outage_rates))
+
+    @property
+    def average_capacity_derate(self) -> float:
+        """Average capacity derate over all years."""
+        return float(np.mean(self.capacity_derates))
 
 
 def apply_physical(
@@ -136,6 +209,66 @@ def apply_climada_physical_risk(
         efficiency_loss=efficiency_loss,
         water_constrained_capacity=water_constrained_capacity,
         notes=notes
+    )
+
+
+def create_yearly_physical_adjustments(
+    climada_hazards: Dict[str, CLIMADAHazardData],
+    scenario_prefix: str,
+    start_year: int = 2024,
+    end_year: int = 2060
+) -> YearlyPhysicalAdjustments:
+    """
+    Create year-by-year physical adjustments from CLIMADA hazard data.
+
+    This enables dynamic climate risk modeling where physical risks
+    increase over time as climate change progresses.
+
+    Args:
+        climada_hazards: Dict of all loaded CLIMADA hazards
+        scenario_prefix: Scenario type (e.g., "moderate_physical", "high_physical")
+        start_year: First year of analysis
+        end_year: Last year of analysis
+
+    Returns:
+        YearlyPhysicalAdjustments with arrays for each year
+
+    Example:
+        >>> hazards = load_climada_hazards('data/raw/climada_hazards.csv')
+        >>> yearly = create_yearly_physical_adjustments(hazards, "high_physical", 2024, 2060)
+        >>> adj_2040 = yearly.get_adjustment_for_year(2040)
+    """
+    years = np.arange(start_year, end_year + 1)
+    n_years = len(years)
+
+    outage_rates = np.zeros(n_years)
+    capacity_derates = np.zeros(n_years)
+    efficiency_losses = np.zeros(n_years)
+    water_constraints = np.ones(n_years)
+
+    for i, year in enumerate(years):
+        try:
+            # Interpolate hazard for this year
+            hazard = interpolate_hazard_by_year(climada_hazards, year, scenario_prefix)
+            outage_rates[i] = hazard.total_outage_rate
+            capacity_derates[i] = hazard.total_capacity_derate
+            # Efficiency loss approximated from compound multiplier effect
+            efficiency_losses[i] = (hazard.compound_multiplier - 1.0) * 0.02  # ~2% per 1.0x compound
+        except (ValueError, KeyError):
+            # If interpolation fails, use baseline values
+            if "baseline" in climada_hazards:
+                baseline = climada_hazards["baseline"]
+                outage_rates[i] = baseline.total_outage_rate
+                capacity_derates[i] = baseline.total_capacity_derate
+                efficiency_losses[i] = 0.0
+
+    return YearlyPhysicalAdjustments(
+        years=years,
+        outage_rates=outage_rates,
+        capacity_derates=capacity_derates,
+        efficiency_losses=efficiency_losses,
+        water_constraints=water_constraints,
+        scenario_name=scenario_prefix
     )
 
 

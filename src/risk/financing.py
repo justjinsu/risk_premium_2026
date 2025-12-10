@@ -17,6 +17,11 @@ class FinancingImpact:
     wacc_baseline_pct: float
     wacc_adjusted_pct: float
 
+    @property
+    def climate_risk_premium_bps(self) -> float:
+        """Alias for crp_bps for clearer naming."""
+        return self.crp_bps
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "expected_loss_pct": self.expected_loss_pct,
@@ -24,6 +29,7 @@ class FinancingImpact:
             "debt_spread_bps": self.debt_spread_bps,
             "equity_premium_pct": self.equity_premium_pct,
             "crp_bps": self.crp_bps,
+            "climate_risk_premium_bps": self.crp_bps,  # Include alias in export
             "wacc_baseline_pct": self.wacc_baseline_pct,
             "wacc_adjusted_pct": self.wacc_adjusted_pct,
         }

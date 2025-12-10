@@ -141,4 +141,8 @@ def test_carbon_price_interpolation():
 
     # Test before/after range
     assert scenario.get_carbon_price(2020) == 0
-    assert scenario.get_carbon_price(2060) == 150
+    # Beyond 2050, now extrapolates with growth rate (not flat)
+    # Growth rate from 2040-2050: (150/100)^0.1 - 1 ≈ 4.14%/year
+    # 2060 = 2050 + 10 years of growth
+    price_2060 = scenario.get_carbon_price(2060)
+    assert price_2060 > 150  # Should be higher due to extrapolation

@@ -1,7 +1,12 @@
 """Risk adjustment modules."""
 
 from .transition import TransitionAdjustments, apply_transition
-from .physical import PhysicalAdjustments, apply_physical
+from .physical import (
+    PhysicalAdjustments,
+    YearlyPhysicalAdjustments,
+    apply_physical,
+    create_yearly_physical_adjustments,
+)
 from .financing import (
     FinancingImpact,
     map_expected_loss_to_spreads,
@@ -21,7 +26,9 @@ __all__ = [
     "TransitionAdjustments",
     "apply_transition",
     "PhysicalAdjustments",
+    "YearlyPhysicalAdjustments",
     "apply_physical",
+    "create_yearly_physical_adjustments",
     "FinancingImpact",
     "map_expected_loss_to_spreads",
     "calculate_expected_loss",
