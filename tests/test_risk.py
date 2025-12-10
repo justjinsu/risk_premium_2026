@@ -23,10 +23,6 @@ def test_transition_adjustments(plant_params):
         name="aggressive",
         dispatch_priority_penalty=0.20,
         retirement_years=25,
-        carbon_price_2025=50,
-        carbon_price_2030=100,
-        carbon_price_2040=150,
-        carbon_price_2050=200,
     )
 
     adj = apply_transition(plant_params, scenario)
@@ -36,10 +32,6 @@ def test_transition_adjustments(plant_params):
 
     # Operating years should be capped
     assert adj.operating_years == 25
-
-    # Carbon price is now accessed from scenario directly, not stored in adjustments
-    # Test that scenario provides correct carbon price
-    assert scenario.get_carbon_price(2025) == 50
 
 
 def test_physical_adjustments(plant_params):
@@ -115,34 +107,3 @@ def test_financing_impact():
 
     # Check WACC increased
     assert impact.wacc_adjusted_pct > impact.wacc_baseline_pct
-
-
-def test_carbon_price_interpolation():
-    """Test carbon price interpolation."""
-    scenario = TransitionScenario(
-        name="test",
-        dispatch_priority_penalty=0.0,
-        retirement_years=30,
-        carbon_price_2025=0,
-        carbon_price_2030=50,
-        carbon_price_2040=100,
-        carbon_price_2050=150,
-    )
-
-    # Test at exact years
-    assert scenario.get_carbon_price(2025) == 0
-    assert scenario.get_carbon_price(2030) == 50
-    assert scenario.get_carbon_price(2040) == 100
-    assert scenario.get_carbon_price(2050) == 150
-
-    # Test interpolation
-    assert scenario.get_carbon_price(2027) == 20  # Halfway between 2025-2030
-    assert scenario.get_carbon_price(2035) == 75  # Halfway between 2030-2040
-
-    # Test before/after range
-    assert scenario.get_carbon_price(2020) == 0
-    # Beyond 2050, now extrapolates with growth rate (not flat)
-    # Growth rate from 2040-2050: (150/100)^0.1 - 1 ≈ 4.14%/year
-    # 2060 = 2050 + 10 years of growth
-    price_2060 = scenario.get_carbon_price(2060)
-    assert price_2060 > 150  # Should be higher due to extrapolation

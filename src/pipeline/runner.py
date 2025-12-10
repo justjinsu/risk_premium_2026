@@ -3,7 +3,7 @@ Class-based orchestration for CRP runs using CSV inputs and CSV/plot outputs.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
@@ -11,11 +11,6 @@ import pandas as pd
 
 from src.data import load_inputs, get_param_value
 from src.scenarios import TransitionScenario, PhysicalScenario, MarketScenario
-from src.scenarios.carbon_pricing import (
-    CarbonPricingScenario,
-    get_all_carbon_scenarios,
-    load_carbon_scenarios_from_csv,
-)
 from src.risk import (
     apply_transition, apply_physical, map_expected_loss_to_spreads, calculate_expected_loss, FinancingImpact,
     assess_credit_rating, calculate_rating_metrics_from_financials, RatingAssessment,
@@ -54,20 +49,6 @@ class CRPModelRunner:
         self.dataset = load_inputs(self.base_dir)
         self.power_plans = load_korea_power_plan_scenarios(self.base_dir / "data/raw/korea_power_plan.csv")
         self.climada_hazards = load_climada_hazards(self.base_dir / "data/raw/climada_hazards.csv")
-        self.carbon_scenarios = self._load_carbon_scenarios()
-
-    def _load_carbon_scenarios(self) -> Dict[str, CarbonPricingScenario]:
-        """Load carbon pricing scenarios from CSV or use defaults."""
-        carbon_csv_path = self.base_dir / "data/raw/carbon_prices.csv"
-        if carbon_csv_path.exists():
-            try:
-                return load_carbon_scenarios_from_csv(str(carbon_csv_path))
-            except Exception as e:
-                print(f"Warning: Could not load carbon_prices.csv: {e}")
-                return get_all_carbon_scenarios()
-        else:
-            # Use built-in scenarios
-            return get_all_carbon_scenarios()
 
     def _get_plant_params(self) -> Dict[str, Any]:
         """Extract plant parameters as a flat dict."""
@@ -86,33 +67,17 @@ class CRPModelRunner:
 
     def _load_transition_scenario(self, scenario_name: str) -> TransitionScenario:
         """
-        Load transition scenario from CSV and link carbon pricing scenario.
-
-        Carbon pricing is linked in this priority:
-        1. If 'carbon_scenario' column exists in policy.csv, link that scenario
-        2. Otherwise, use the carbon_price_20XX anchor points
+        Load transition scenario from CSV.
         """
         row = self.dataset.policy_scenarios.get(scenario_name)
         if not row:
             raise ValueError(f"Transition scenario '{scenario_name}' not found")
 
-        # Get carbon scenario name from policy.csv (if present)
-        carbon_scenario_name = row.get('carbon_scenario', None)
-
         scenario = TransitionScenario(
             name=scenario_name,
             dispatch_priority_penalty=float(row.get('dispatch_penalty', 0)),
             retirement_years=int(float(row.get('retirement_years', 40))),
-            carbon_price_2025=float(row.get('carbon_price_2025', 0)),
-            carbon_price_2030=float(row.get('carbon_price_2030', 0)),
-            carbon_price_2040=float(row.get('carbon_price_2040', 0)),
-            carbon_price_2050=float(row.get('carbon_price_2050', 0)),
-            carbon_scenario_name=carbon_scenario_name,
         )
-
-        # Link detailed carbon pricing scenario if available
-        if carbon_scenario_name and carbon_scenario_name in self.carbon_scenarios:
-            scenario.set_carbon_scenario(self.carbon_scenarios[carbon_scenario_name])
 
         return scenario
 
@@ -152,8 +117,6 @@ class CRPModelRunner:
 
     def _load_market_scenario(self, scenario_name: str) -> MarketScenario:
         """Load market scenario (demand/price)."""
-        # For now, create default or simple variations since we don't have a CSV for this yet
-        # In a real app, this would load from data/raw/market_scenarios.csv
         if scenario_name == "low_demand":
             return MarketScenario(name="low_demand", demand_growth_pct=-1.0, price_sensitivity=0.5)
         elif scenario_name == "high_demand":
@@ -182,11 +145,11 @@ class CRPModelRunner:
             korea_plan = self.power_plans[power_plan_name]
 
         transition_adj = apply_transition(
-            plant_params, 
+            plant_params,
             transition_scenario,
             korea_plan_scenario=korea_plan
         )
-        
+
         # Handle CLIMADA vs Standard Physical Scenario
         if isinstance(physical_data, CLIMADAHazardData):
             # Create a dummy base scenario for the signature, but pass climada_hazard
@@ -259,14 +222,15 @@ class CRPModelRunner:
         """
         if scenarios is None:
             scenarios = [
-                # No carbon pricing baseline (for educational comparison)
-                {"name": "no_carbon_baseline", "transition": "no_carbon_baseline", "physical": "baseline"},
-                # Standard scenarios
+                # Baseline scenario (no transition risk, no physical risk)
                 {"name": "baseline", "transition": "baseline", "physical": "baseline"},
+                # Transition risk scenarios (dispatch penalties only, no carbon)
                 {"name": "moderate_transition", "transition": "moderate_transition", "physical": "baseline"},
                 {"name": "aggressive_transition", "transition": "aggressive_transition", "physical": "baseline"},
+                # Physical risk scenarios
                 {"name": "moderate_physical", "transition": "baseline", "physical": "moderate_physical"},
                 {"name": "high_physical", "transition": "baseline", "physical": "high_physical"},
+                # Combined scenarios
                 {"name": "combined_moderate", "transition": "moderate_transition", "physical": "moderate_physical"},
                 {"name": "combined_aggressive", "transition": "aggressive_transition", "physical": "high_physical"},
                 # Additional scenarios
@@ -281,7 +245,7 @@ class CRPModelRunner:
         for scenario_spec in scenarios:
             market_name = scenario_spec.get("market", "baseline")
             power_plan_name = scenario_spec.get("power_plan", None)
-            
+
             result = self.run_scenario(
                 scenario_spec["name"],
                 scenario_spec["transition"],
@@ -295,19 +259,17 @@ class CRPModelRunner:
                 baseline_result = result
 
         # Calculate financing impacts using counterfactual baseline
-        # Counterfactual = A-rated (no-carbon world) for all scenarios including baseline
         plant_params = self._get_plant_params()
         financing_params = self._get_financing_params()
         total_capex = plant_params.get('total_capex_million', 3200) * 1e6
 
-        # Get counterfactual rating (A = no carbon world)
+        # Get counterfactual rating (A = no risk world)
         counterfactual_rating = get_counterfactual_baseline_rating()
         counterfactual_spread = counterfactual_rating.to_spread_bps()
         counterfactual_notch = counterfactual_rating.value
 
         for name, result in results.items():
-            # Calculate counterfactual NPV loss (vs. no-carbon world)
-            # For now, use baseline NPV as proxy for counterfactual NPV
+            # Calculate counterfactual NPV loss
             counterfactual_npv = baseline_result.metrics.npv if baseline_result else result.metrics.npv
             npv_loss = counterfactual_npv - result.metrics.npv
 

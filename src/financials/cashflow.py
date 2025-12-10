@@ -5,6 +5,8 @@ Supports:
 - Year-by-year physical risk evolution (CLIMADA hazards)
 - Proper outage modeling (reduces revenue, not adds cost)
 - Efficiency loss from physical risks
+
+Note: Carbon pricing has been archived. This model focuses on dispatch and physical risks.
 """
 from __future__ import annotations
 
@@ -28,7 +30,6 @@ class CashFlowTimeSeries:
     fuel_costs: np.ndarray
     variable_opex: np.ndarray
     fixed_opex: np.ndarray
-    carbon_costs: np.ndarray
     outage_costs: np.ndarray
     total_costs: np.ndarray
     ebitda: np.ndarray
@@ -49,7 +50,6 @@ class CashFlowTimeSeries:
             "fuel_costs": self.fuel_costs.tolist(),
             "variable_opex": self.variable_opex.tolist(),
             "fixed_opex": self.fixed_opex.tolist(),
-            "carbon_costs": self.carbon_costs.tolist(),
             "outage_costs": self.outage_costs.tolist(),
             "total_costs": self.total_costs.tolist(),
             "ebitda": self.ebitda.tolist(),
@@ -78,7 +78,7 @@ def compute_cashflows_timeseries(
 
     Args:
         plant_params: Plant design parameters
-        transition_scenario: Transition risk scenario (for carbon prices)
+        transition_scenario: Transition risk scenario (dispatch penalties)
         transition_adj: Static transition adjustments
         physical_adj: Static physical adjustments (used if yearly_physical_adj is None)
         market_scenario: Optional market scenario
@@ -98,7 +98,6 @@ def compute_cashflows_timeseries(
     fuel_price = float(plant_params.get("fuel_price_per_mmbtu", 3.2))
     fixed_opex_per_kw = float(plant_params.get("fixed_opex_per_kw_year", 42))
     variable_opex_per_mwh = float(plant_params.get("variable_opex_per_mwh", 4.5))
-    emissions_rate = float(plant_params.get("emissions_tCO2_per_mwh", 0.95))
 
     # Financial params for concretization
     total_capex = float(plant_params.get("total_capex_million", 3200)) * 1e6
@@ -171,9 +170,6 @@ def compute_cashflows_timeseries(
 
     revenue = actual_mwh * prices
 
-    # Carbon price trajectory
-    carbon_prices = np.array([transition_scenario.get_carbon_price(year) for year in years])
-
     # === COSTS ===
     # Fuel costs: affected by efficiency loss (higher heat rate = more fuel)
     effective_heat_rates = heat_rate * (1 + efficiency_losses)
@@ -185,21 +181,18 @@ def compute_cashflows_timeseries(
     # Fixed O&M: constant regardless of generation
     fixed_opex = np.full(n_years, capacity_mw * 1000 * fixed_opex_per_kw)
 
-    # Carbon costs: based on actual emissions (actual generation × emissions rate)
-    carbon_costs = actual_mwh * emissions_rate * carbon_prices
-
     # Outage costs: Now represents LOST REVENUE (for reporting), not an actual cash cost
     # This is the revenue we would have earned but didn't due to outages
     # We track this separately for transparency, but it's already reflected in reduced revenue
     outage_costs = potential_mwh * outage_rates * prices  # Lost revenue from outages
 
-    total_costs = fuel_costs + variable_opex + fixed_opex + carbon_costs
+    total_costs = fuel_costs + variable_opex + fixed_opex
     # Note: outage_costs NOT included in total_costs - it's informational only
 
     # --- Financial Calculations ---
 
     # 1. EBITDA Calculation
-    # EBITDA = Revenue - Total Costs (Fuel + O&M + Carbon + Outage)
+    # EBITDA = Revenue - Total Costs (Fuel + O&M)
     ebitda = revenue - total_costs
 
     # 2. Depreciation (Non-cash expense)
@@ -207,29 +200,29 @@ def compute_cashflows_timeseries(
     # Assumption: Capex is fully depreciable, no salvage value
     annual_depreciation = total_capex / useful_life
     depreciation = np.full(n_years, annual_depreciation)
-    
+
     # 3. EBIT (Earnings Before Interest and Taxes)
     # EBIT = EBITDA - Depreciation
     ebit = ebitda - depreciation
-    
+
     # 4. Debt Service (Interest & Principal)
     # Calculate amortization schedule for the debt portion
     debt_amount = total_capex * debt_fraction
     interest_expense = np.zeros(n_years)
     balance = debt_amount
-    
+
     if debt_interest > 0 and debt_tenor > 0:
         # Calculate level annual payment (Annuity)
         annual_ds = -npf.pmt(debt_interest, debt_tenor, debt_amount)
-        
+
         for i in range(min(n_years, debt_tenor)):
             # Interest component
             interest = balance * debt_interest
             # Principal component
             principal = annual_ds - interest
-            
+
             interest_expense[i] = interest
-            
+
             # Update balance
             balance -= principal
             if balance < 0: balance = 0
@@ -241,7 +234,7 @@ def compute_cashflows_timeseries(
     taxable_income = ebit - interest_expense
     # Tax cannot be negative (no carry-forward modeled for simplicity)
     tax_expense = np.maximum(0.0, taxable_income * tax_rate)
-    
+
     # 6. Net Income
     # Net Income = EBT - Tax
     net_income = ebit - interest_expense - tax_expense
@@ -255,10 +248,10 @@ def compute_cashflows_timeseries(
     # FCFF = NOPAT + Depreciation - Capex
     # NOPAT = EBIT * (1 - Tax Rate)
     nopat = ebit * (1 - tax_rate)
-    
+
     # Capex (sustaining capex only, construction already completed)
     capex = np.zeros(n_years)
-    
+
     fcf = nopat + depreciation - capex
 
     return CashFlowTimeSeries(
@@ -267,7 +260,6 @@ def compute_cashflows_timeseries(
         fuel_costs=fuel_costs,
         variable_opex=variable_opex,
         fixed_opex=fixed_opex,
-        carbon_costs=carbon_costs,
         outage_costs=outage_costs,
         total_costs=total_costs,
         ebitda=ebitda,
@@ -312,11 +304,10 @@ def compute_cashflows(
     fuel_cost = annual_mwh * heat_rate * fuel_price
     variable_costs = annual_mwh * variable_opex
     fixed_costs = capacity_mw * 1000 * fixed_opex
-    carbon_costs = annual_mwh * 0.95 * 50  # placeholder carbon price
     outage_penalty = annual_mwh * physical.outage_rate * price
 
     revenue = annual_mwh * price
-    costs = fuel_cost + variable_costs + fixed_costs + carbon_costs + outage_penalty
+    costs = fuel_cost + variable_costs + fixed_costs + outage_penalty
     ebitda = revenue - costs
     fcf = ebitda
     notes = "Legacy single-period; use compute_cashflows_timeseries instead."
