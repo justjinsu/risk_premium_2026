@@ -259,6 +259,9 @@ class CRPModelRunner:
         """
         if scenarios is None:
             scenarios = [
+                # No carbon pricing baseline (for educational comparison)
+                {"name": "no_carbon_baseline", "transition": "no_carbon_baseline", "physical": "baseline"},
+                # Standard scenarios
                 {"name": "baseline", "transition": "baseline", "physical": "baseline"},
                 {"name": "moderate_transition", "transition": "moderate_transition", "physical": "baseline"},
                 {"name": "aggressive_transition", "transition": "aggressive_transition", "physical": "baseline"},
@@ -266,9 +269,9 @@ class CRPModelRunner:
                 {"name": "high_physical", "transition": "baseline", "physical": "high_physical"},
                 {"name": "combined_moderate", "transition": "moderate_transition", "physical": "moderate_physical"},
                 {"name": "combined_aggressive", "transition": "aggressive_transition", "physical": "high_physical"},
-                # New Scenarios
+                # Additional scenarios
                 {"name": "low_demand", "transition": "baseline", "physical": "baseline", "market": "low_demand"},
-                {"name": "severe_drought", "transition": "baseline", "physical": "severe_drought", "market": "baseline"}, # Will need to ensure high_physical has water constraints
+                {"name": "severe_drought", "transition": "baseline", "physical": "severe_drought", "market": "baseline"},
             ]
 
         results = {}

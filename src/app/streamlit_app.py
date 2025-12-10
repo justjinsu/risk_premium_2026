@@ -242,6 +242,202 @@ def page_model_overview():
 
 
 # =============================================================================
+# PAGE: CARBON IMPACT (Educational)
+# =============================================================================
+
+def page_carbon_impact():
+    """Educational page showing the impact of carbon pricing."""
+    st.header("🎓 Understanding Carbon Pricing Impact")
+
+    st.markdown("""
+    This page compares a **hypothetical no-carbon pricing world** with scenarios that include
+    carbon costs. This helps understand how much of the climate risk premium is driven by
+    carbon pricing policy vs. physical climate risks.
+    """)
+
+    df = load_scenario_comparison()
+    if df is None:
+        st.warning("⚠️ No data. Run the model first!")
+        return
+
+    # Check if no_carbon_baseline exists
+    no_carbon = df[df['scenario'] == 'no_carbon_baseline']
+    baseline = df[df['scenario'] == 'baseline']
+
+    if len(no_carbon) == 0:
+        st.info("💡 Run the model to include the 'no_carbon_baseline' scenario for this comparison.")
+        return
+
+    st.markdown("---")
+
+    # Side-by-side comparison
+    st.subheader("📊 No Carbon vs. Baseline Comparison")
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+        st.markdown("### 🌿 No Carbon Pricing")
+        st.markdown("*Hypothetical world without carbon costs*")
+
+        if len(no_carbon) > 0:
+            nc = no_carbon.iloc[0]
+            st.metric("Credit Rating", nc.get('scenario_rating_new', 'N/A'))
+            st.metric("Spread", f"{nc.get('spread_bps', 0):.0f} bps")
+            st.metric("Average DSCR", f"{nc.get('avg_dscr', 0):.2f}x")
+            if 'npv_million' in nc:
+                st.metric("NPV", f"${nc['npv_million']:,.0f}M")
+
+    with col2:
+        st.markdown("### 🏭 With K-ETS Carbon Pricing")
+        st.markdown("*Current policy: $8-75/tCO2 (2024-2050)*")
+
+        if len(baseline) > 0:
+            bl = baseline.iloc[0]
+
+            # Calculate deltas
+            rating_delta = ""
+            spread_delta = None
+            if len(no_carbon) > 0:
+                nc = no_carbon.iloc[0]
+                spread_delta = bl.get('spread_bps', 0) - nc.get('spread_bps', 0)
+
+            st.metric("Credit Rating", bl.get('scenario_rating_new', 'N/A'))
+            st.metric("Spread", f"{bl.get('spread_bps', 0):.0f} bps",
+                     delta=f"+{spread_delta:.0f} bps" if spread_delta else None,
+                     delta_color="inverse")
+            st.metric("Average DSCR", f"{bl.get('avg_dscr', 0):.2f}x")
+            if 'npv_million' in bl:
+                npv_delta = None
+                if len(no_carbon) > 0 and 'npv_million' in no_carbon.iloc[0]:
+                    npv_delta = bl['npv_million'] - no_carbon.iloc[0]['npv_million']
+                st.metric("NPV", f"${bl['npv_million']:,.0f}M",
+                         delta=f"${npv_delta:,.0f}M" if npv_delta else None,
+                         delta_color="inverse" if npv_delta and npv_delta < 0 else "normal")
+
+    st.markdown("---")
+
+    # Key insight box
+    st.subheader("💡 Key Insight: Carbon Pricing Impact")
+
+    if len(no_carbon) > 0 and len(baseline) > 0:
+        nc = no_carbon.iloc[0]
+        bl = baseline.iloc[0]
+
+        spread_impact = bl.get('spread_bps', 0) - nc.get('spread_bps', 0)
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Spread Impact from Carbon", f"+{spread_impact:.0f} bps",
+                   help="Additional spread due to carbon pricing alone")
+
+        if 'counterfactual_crp_bps' in bl and 'counterfactual_crp_bps' in nc:
+            crp_diff = bl['counterfactual_crp_bps'] - nc.get('counterfactual_crp_bps', 0)
+            col2.metric("CRP from Carbon Policy", f"{crp_diff:.0f} bps",
+                       help="Climate Risk Premium attributable to carbon pricing")
+
+        if 'avg_dscr' in bl and 'avg_dscr' in nc:
+            dscr_impact = bl['avg_dscr'] - nc['avg_dscr']
+            col3.metric("DSCR Impact", f"{dscr_impact:.2f}x",
+                       help="Change in Debt Service Coverage Ratio")
+
+        st.info(f"""
+        **Interpretation:** Carbon pricing (K-ETS) adds approximately **{spread_impact:.0f} basis points**
+        to the cost of debt financing for Samcheok. This represents the market's pricing of
+        transition risk from climate policy.
+
+        Without carbon costs, the plant would have a healthier financial profile.
+        The carbon pricing creates a "death spiral" where:
+        1. Carbon costs reduce EBITDA
+        2. Lower EBITDA reduces DSCR
+        3. Lower DSCR triggers rating downgrades
+        4. Lower ratings increase borrowing costs
+        """)
+
+    st.markdown("---")
+
+    # Cashflow comparison chart
+    st.subheader("📈 Cashflow Comparison")
+
+    cashflows = load_all_cashflows()
+    if 'no_carbon_baseline' in cashflows and 'baseline' in cashflows:
+        cf_nc = cashflows['no_carbon_baseline']
+        cf_bl = cashflows['baseline']
+
+        year_col = 'year' if 'year' in cf_nc.columns else cf_nc.columns[0]
+
+        # EBITDA comparison
+        fig = go.Figure()
+        fig.add_trace(go.Scatter(
+            x=cf_nc[year_col], y=cf_nc['ebitda']/1e6,
+            name="No Carbon", line=dict(color="green", width=3)
+        ))
+        fig.add_trace(go.Scatter(
+            x=cf_bl[year_col], y=cf_bl['ebitda']/1e6,
+            name="With K-ETS", line=dict(color="red", width=3)
+        ))
+        fig.add_hline(y=0, line_dash="dash", line_color="black")
+        fig.update_layout(
+            title="EBITDA: No Carbon vs. K-ETS ($M)",
+            xaxis_title="Year",
+            yaxis_title="EBITDA ($M)",
+            legend=dict(yanchor="top", y=0.99, xanchor="left", x=0.01)
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Carbon cost chart (only baseline has it)
+        if 'carbon_costs' in cf_bl.columns:
+            col1, col2 = st.columns(2)
+
+            with col1:
+                fig2 = go.Figure()
+                fig2.add_trace(go.Bar(
+                    x=cf_bl[year_col], y=cf_bl['carbon_costs']/1e6,
+                    name="Carbon Costs", marker_color="orange"
+                ))
+                fig2.update_layout(
+                    title="Annual Carbon Costs ($M)",
+                    xaxis_title="Year",
+                    yaxis_title="Cost ($M)"
+                )
+                st.plotly_chart(fig2, use_container_width=True)
+
+            with col2:
+                # Cumulative carbon cost
+                cumulative = cf_bl['carbon_costs'].cumsum() / 1e9
+                fig3 = go.Figure()
+                fig3.add_trace(go.Scatter(
+                    x=cf_bl[year_col], y=cumulative,
+                    fill='tozeroy', name="Cumulative",
+                    line=dict(color="darkorange")
+                ))
+                fig3.update_layout(
+                    title="Cumulative Carbon Costs ($B)",
+                    xaxis_title="Year",
+                    yaxis_title="Cost ($B)"
+                )
+                st.plotly_chart(fig3, use_container_width=True)
+    else:
+        st.info("Run the model to see cashflow comparisons.")
+
+    st.markdown("---")
+
+    # Summary table
+    st.subheader("📋 All Scenarios Summary")
+
+    display_cols = ['scenario', 'scenario_rating_new', 'spread_bps', 'avg_dscr',
+                   'counterfactual_crp_bps', 'npv_million']
+    available_cols = [c for c in display_cols if c in df.columns]
+
+    # Highlight no_carbon_baseline row
+    def highlight_no_carbon(row):
+        if row['scenario'] == 'no_carbon_baseline':
+            return ['background-color: #d4edda'] * len(row)
+        return [''] * len(row)
+
+    styled_df = df[available_cols].style.apply(highlight_no_carbon, axis=1)
+    st.dataframe(styled_df, use_container_width=True)
+
+
+# =============================================================================
 # PAGE: SCENARIO COMPARISON
 # =============================================================================
 
@@ -626,6 +822,7 @@ def main():
 
     page = st.sidebar.radio("📑 Navigate", [
         "🏗️ Model Overview",
+        "🎓 Carbon Impact",
         "📊 Scenario Comparison",
         "💰 Cashflow Analysis",
         "📈 Credit Rating",
@@ -654,6 +851,8 @@ def main():
     # Route pages
     if page == "🏗️ Model Overview":
         page_model_overview()
+    elif page == "🎓 Carbon Impact":
+        page_carbon_impact()
     elif page == "📊 Scenario Comparison":
         page_scenario_comparison()
     elif page == "💰 Cashflow Analysis":
