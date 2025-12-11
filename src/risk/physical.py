@@ -3,6 +3,11 @@ Physical risk adjustments (wildfire, water stress, temperature).
 
 Updated to integrate CLIMADA hazard data (wildfire, flood, sea level rise).
 Supports year-by-year hazard evolution for dynamic climate risk modeling.
+
+CORRECTED (2024 Review):
+- Physical risk values updated based on Korea-specific literature
+- Original values were overestimated by 10-50x
+- See docs/literature_review/ for detailed methodology corrections
 """
 from __future__ import annotations
 
@@ -12,7 +17,12 @@ import numpy as np
 
 from src.scenarios import PhysicalScenario
 
-from src.climada.hazards import CLIMADAHazardData, interpolate_hazard_by_year
+from src.climada.hazards import CLIMADAHazardData, interpolate_hazard_by_year, create_corrected_baseline
+from src.climada.literature_parameters import (
+    calculate_wildfire_outage_rate,
+    calculate_flood_outage_rate,
+    get_corrected_baseline_values,
+)
 CLIMADA_AVAILABLE = True
 
 
@@ -276,52 +286,98 @@ def get_physical_risk_scenario(level: str) -> PhysicalScenario:
     """
     Get physical risk scenario by severity level.
 
+    CORRECTED (2024): Values updated based on Korea-specific literature.
+    Original values were overestimated by 10-50x.
+
+    Corrected values (for Samcheok):
+    - Baseline wildfire: ~0.05% (was 1-5%)
+    - Baseline flood: ~0.003% (was 1-3%)
+    - Compound multiplier: 1.0-1.25x (was 1.2-2.0x)
+
     Args:
         level: "Low", "Medium", "High", "Extreme"
 
     Returns:
-        PhysicalScenario with appropriate water constraints
+        PhysicalScenario with appropriate risk parameters
     """
     level = level.lower()
-    
-    if level == "low":
+
+    # Get corrected baseline values
+    baseline = get_corrected_baseline_values()
+    wildfire_base = baseline["wildfire_outage_rate"]  # ~0.0005
+
+    if level == "low" or level == "baseline":
+        # Baseline 2024 - corrected Korea values
         return PhysicalScenario(
-            name="Low Risk",
-            wildfire_outage_rate=0.0,
+            name="Baseline (Corrected)",
+            wildfire_outage_rate=wildfire_base,  # ~0.05%
             drought_derate=0.0,
             cooling_temp_penalty=0.0,
             water_availability_pct=100.0
         )
-    elif level == "medium":
+    elif level == "medium" or level == "moderate":
+        # RCP4.5 2040-ish - mild climate change
         return PhysicalScenario(
-            name="Medium Risk",
-            wildfire_outage_rate=0.01,
-            drought_derate=0.02,
-            cooling_temp_penalty=0.01,
-            water_availability_pct=90.0
+            name="Moderate Physical Risk (Corrected)",
+            wildfire_outage_rate=wildfire_base * 1.5,  # ~0.08%
+            drought_derate=0.005,  # 0.5% derate
+            cooling_temp_penalty=0.002,  # 0.2% efficiency loss
+            water_availability_pct=98.0
         )
     elif level == "high":
+        # RCP8.5 2050-ish - significant climate change
         return PhysicalScenario(
-            name="High Risk",
-            wildfire_outage_rate=0.03,
-            drought_derate=0.05,
-            cooling_temp_penalty=0.03,
-            water_availability_pct=80.0
+            name="High Physical Risk (Corrected)",
+            wildfire_outage_rate=wildfire_base * 2.0,  # ~0.1%
+            drought_derate=0.01,  # 1% derate
+            cooling_temp_penalty=0.005,  # 0.5% efficiency loss
+            water_availability_pct=95.0
         )
     elif level == "extreme":
+        # RCP8.5 2060+ - severe climate change
         return PhysicalScenario(
-            name="Extreme Risk",
-            wildfire_outage_rate=0.05,
-            drought_derate=0.10,
-            cooling_temp_penalty=0.05,
-            water_availability_pct=60.0
+            name="Extreme Physical Risk (Corrected)",
+            wildfire_outage_rate=wildfire_base * 4.0,  # ~0.2%
+            drought_derate=0.02,  # 2% derate
+            cooling_temp_penalty=0.01,  # 1% efficiency loss
+            water_availability_pct=90.0
         )
     else:
-        # Default to Low
+        # Default to baseline
         return PhysicalScenario(
-            name="Baseline (Low)",
-            wildfire_outage_rate=0.0,
+            name="Baseline (Corrected)",
+            wildfire_outage_rate=wildfire_base,
             drought_derate=0.0,
             cooling_temp_penalty=0.0,
             water_availability_pct=100.0
         )
+
+
+def get_physical_risk_from_climada(
+    target_year: int = 2024,
+    rcp: str = "current"
+) -> PhysicalAdjustments:
+    """
+    Get physical risk adjustments using corrected CLIMADA-style calculations.
+
+    This is the RECOMMENDED way to get physical risk for Samcheok.
+    Uses Korea-specific literature values, not California data.
+
+    Args:
+        target_year: Target year for projections
+        rcp: RCP scenario ("current", "RCP4.5", "RCP8.5")
+
+    Returns:
+        PhysicalAdjustments with corrected values
+    """
+    hazard = create_corrected_baseline(target_year, rcp)
+    return PhysicalAdjustments(
+        outage_rate=hazard.total_outage_rate,
+        capacity_derate=hazard.total_capacity_derate,
+        efficiency_loss=0.0,
+        water_constrained_capacity=1.0,
+        notes=f"Corrected CLIMADA ({rcp} {target_year}): "
+              f"Wildfire {hazard.wildfire_outage_rate:.4%}, "
+              f"Flood {hazard.flood_outage_rate:.4%}, "
+              f"SLR {hazard.slr_capacity_derate:.4%}"
+    )
