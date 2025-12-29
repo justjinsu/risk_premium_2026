@@ -31,7 +31,7 @@ from enum import Enum
 from .literature_parameters import (
     THERMAL_EFFICIENCY_PARAMS,
     WILDFIRE_OUTAGE_PARAMS,
-    FLOOD_DAMAGE_PARAMS,
+    FLOOD_OUTAGE_PARAMS,
     COMPOUND_RISK_PARAMS,
     SLR_PARAMS,
     LiteratureSource,
@@ -226,7 +226,7 @@ class ProbabilisticRiskEngine:
         functions[HazardType.FLOOD] = DamageFunction(
             hazard_type=HazardType.FLOOD,
             intensity_unit="meters",
-            curve_points=FLOOD_DAMAGE_PARAMS["flood_depth_damage_curve"],
+            curve_points=FLOOD_OUTAGE_PARAMS["flood_depth_damage_curve"],
             source="FEMA HAZUS-MH Technical Manual (2022)"
         )
 

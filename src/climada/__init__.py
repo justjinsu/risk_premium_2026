@@ -1,76 +1,51 @@
 """
-CLIMADA (Climate Adaptation) physical risk integration module.
+CLIMADA Physical Risk Model for Samcheok Blue Power Plant.
 
-This module provides functionality to incorporate CLIMADA hazard data
-(wildfire, flood, sea level rise) into physical risk assessments.
+Integrates:
+1. CLIMADA API data (Wildfire, TC, River Flood)
+2. Temperature efficiency derate (literature)
+3. Sea level rise projections (CMIP6)
 
-Key Features:
-- Literature-backed parameters (literature_parameters.py)
-- Probabilistic risk framework (probabilistic_risk.py)
-- CLIMADA hazard data structures (hazards.py)
+Run:
+    python -m src.climada.climada_physical_risk_model
 
-All parameter values are derived from peer-reviewed literature.
-See docs/physical_risk_methodology.md for full citations.
+Output:
+    data/physical_risk_steps/physical_risk_output.csv
+
+Version: 1.0 (December 2024)
 """
-from .hazards import (
-    CLIMADAHazardData,
-    load_climada_hazards,
-    calculate_compound_risk,
-    get_hazard_description,
-    interpolate_hazard_by_year,
-    calculate_economic_impact,
-)
 
-from .literature_parameters import (
-    LiteratureSource,
-    LiteratureParameter,
-    THERMAL_EFFICIENCY_PARAMS,
-    WILDFIRE_OUTAGE_PARAMS,
-    FLOOD_DAMAGE_PARAMS,
-    COMPOUND_RISK_PARAMS,
-    SLR_PARAMS,
-    KOREA_SPECIFIC_PARAMS,
-    get_all_parameters,
-    get_parameter_summary,
-)
-
-from .probabilistic_risk import (
-    HazardType,
-    HazardEvent,
-    DamageFunction,
-    ExposureAsset,
-    AnnualRiskResult,
-    CreditRiskImpact,
-    ProbabilisticRiskEngine,
-    create_samcheok_exposure,
+from .climada_physical_risk_model import (
+    # Main functions
+    run_full_analysis,
+    calculate_physical_risk,
+    calculate_temperature_impact,
+    analyze_climada_hazards,
+    # Data classes
+    PhysicalRiskSummary,
+    HazardResult,
+    TemperatureResult,
+    # Constants
+    SAMCHEOK_LAT,
+    SAMCHEOK_LON,
+    KOREA_TEMP_PROJECTIONS_RCP85,
+    WILDFIRE_CLIMATE_FACTORS,
+    TC_CLIMATE_FACTORS,
+    SLR_PROJECTIONS_M,
 )
 
 __all__ = [
-    # Hazards module
-    'CLIMADAHazardData',
-    'load_climada_hazards',
-    'calculate_compound_risk',
-    'get_hazard_description',
-    'interpolate_hazard_by_year',
-    'calculate_economic_impact',
-    # Literature parameters
-    'LiteratureSource',
-    'LiteratureParameter',
-    'THERMAL_EFFICIENCY_PARAMS',
-    'WILDFIRE_OUTAGE_PARAMS',
-    'FLOOD_DAMAGE_PARAMS',
-    'COMPOUND_RISK_PARAMS',
-    'SLR_PARAMS',
-    'KOREA_SPECIFIC_PARAMS',
-    'get_all_parameters',
-    'get_parameter_summary',
-    # Probabilistic risk
-    'HazardType',
-    'HazardEvent',
-    'DamageFunction',
-    'ExposureAsset',
-    'AnnualRiskResult',
-    'CreditRiskImpact',
-    'ProbabilisticRiskEngine',
-    'create_samcheok_exposure',
+    'run_full_analysis',
+    'calculate_physical_risk',
+    'calculate_temperature_impact',
+    'analyze_climada_hazards',
+    'PhysicalRiskSummary',
+    'HazardResult',
+    'TemperatureResult',
+    'SAMCHEOK_LAT',
+    'SAMCHEOK_LON',
+    'KOREA_TEMP_PROJECTIONS_RCP85',
+    'WILDFIRE_CLIMATE_FACTORS',
+    'TC_CLIMATE_FACTORS',
+    'SLR_PROJECTIONS_M',
 ]

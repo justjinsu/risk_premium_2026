@@ -1,12 +1,29 @@
 """
 CLIMADA hazard data structures and loaders.
 Integrates wildfire, flood, and sea level rise impacts.
+
+CORRECTED (2024 Review):
+- Compound multiplier now uses 1.0-1.25 range (was 1.2-2.0)
+- Uses corrected formulas from literature_parameters.py
+- Updated thresholds for description based on realistic values
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Dict
 import pandas as pd
+
+from .literature_parameters import (
+    calculate_compound_multiplier as lit_compound_mult,
+    calculate_wildfire_outage_rate as lit_wildfire_rate,
+    calculate_flood_outage_rate as lit_flood_rate,
+    calculate_slr_capacity_derate as lit_slr_derate,
+    WILDFIRE_OUTAGE_PARAMS,
+    FLOOD_OUTAGE_PARAMS,
+    SLR_PARAMS,
+    COMPOUND_RISK_PARAMS,
+    CLIMATE_MULTIPLIERS,
+)
 
 
 @dataclass
@@ -20,7 +37,7 @@ class CLIMADAHazardData:
         wildfire_outage_rate: Annual forced outage rate from wildfires (0-1)
         flood_outage_rate: Annual forced outage rate from floods (0-1)
         slr_capacity_derate: Capacity derating from sea level rise (0-1)
-        compound_multiplier: Amplification factor for concurrent hazards (≥1.0)
+        compound_multiplier: Amplification factor for concurrent hazards (1.0-1.25)
         fwi_index: Fire Weather Index (CLIMADA metric)
         flood_return_period: Return period of design flood (years)
         slr_meters: Sea level rise above baseline (meters)
@@ -87,7 +104,7 @@ def load_climada_hazards(file_path: str, scenario_name: str = None) -> Dict[str,
     Load CLIMADA hazard data from CSV file.
 
     Args:
-        file_path: Path to climada_hazards.csv
+        file_path: Path to climada_hazards.csv or literature_hazards.csv
         scenario_name: Optional filter for specific scenario
 
     Returns:
@@ -121,37 +138,79 @@ def calculate_compound_risk(
     wildfire_outage: float,
     flood_outage: float,
     slr_derate: float,
-    base_amplification: float = 1.2
+    scenario_severity: str = "baseline"
 ) -> CLIMADAHazardData:
     """
-    Calculate compound hazard risk with non-linear interaction effects.
+    Calculate compound hazard risk with corrected multipliers.
 
-    Compound events amplify impacts beyond simple addition. This model uses a 
-    sigmoid-like scaling where higher combined base risks lead to disproportionately 
-    higher amplification (systemic stress).
+    CORRECTED: Uses 1.0-1.25 range (was 1.2-2.0).
+
+    NOTE: Zscheischler (2018) is a CONCEPTUAL FRAMEWORK, not a source for
+    specific multiplier values. These multipliers are based on conservative
+    estimates from hazard correlation analysis.
+
+    For a single asset like Samcheok:
+    - Baseline: 1.0x (no amplification)
+    - Moderate: 1.05x (mild correlation)
+    - High: 1.10x (moderate correlation)
+    - Extreme: 1.15x (high correlation)
+    - Maximum: 1.25x (concurrent hazards)
 
     Args:
         wildfire_outage: Base wildfire outage rate
         flood_outage: Base flood outage rate
         slr_derate: Base SLR capacity derating
-        base_amplification: Minimum amplification factor (default 1.2)
+        scenario_severity: "baseline", "moderate", "high", "extreme", "catastrophic"
 
     Returns:
         CLIMADAHazardData with compound effects
     """
+    # Use the corrected compound multiplier function
+    final_multiplier = lit_compound_mult(
+        wildfire_rate=wildfire_outage,
+        flood_rate=flood_outage,
+        slr_derate=slr_derate,
+        scenario_severity=scenario_severity
+    )
+
+    total_base_risk = wildfire_outage + flood_outage + slr_derate
+
+    return CLIMADAHazardData(
+        wildfire_outage_rate=wildfire_outage,
+        flood_outage_rate=flood_outage,
+        slr_capacity_derate=slr_derate,
+        compound_multiplier=final_multiplier,
+        notes=f"Compound risk with {final_multiplier:.2f}x amplification "
+              f"(System Stress: {total_base_risk:.4%}, Severity: {scenario_severity})"
+    )
+
+
+def calculate_compound_risk_legacy(
+    wildfire_outage: float,
+    flood_outage: float,
+    slr_derate: float,
+    base_amplification: float = 1.2
+) -> CLIMADAHazardData:
+    """
+    DEPRECATED: Original compound risk calculation with flawed 1.2-2.0 range.
+
+    This function is kept for backwards compatibility but should not be used.
+    Use calculate_compound_risk() instead.
+
+    The original formula:
+    - risk_factor = min(1.0, total_base_risk * 10)
+    - final_multiplier = 1.2 + (0.8 * risk_factor)  # Range: 1.2 to 2.0
+
+    This was WRONG because:
+    1. Zscheischler (2018) does NOT provide these values
+    2. 2.0x multiplier is only appropriate for systemic/cascading failures
+    3. For a single asset, 1.25x is maximum reasonable compound effect
+    """
     # Sum of individual risks (proxy for total system stress)
     total_base_risk = wildfire_outage + flood_outage + slr_derate
-    
-    # Non-linear amplification:
-    # If risks are low (<1%), amplification is close to base (1.2x)
-    # If risks are high (>5%), amplification scales up significantly (up to 2.0x)
-    # Logic: Multiple simultaneous stressors cause cascading failures (e.g., supply chain + physical damage)
-    
-    # Simple sigmoid-like scaling
-    # risk_factor goes from 0.0 to ~1.0 as total_base_risk goes from 0 to 0.10
-    risk_factor = min(1.0, total_base_risk * 10) 
-    
-    # Scale amplification from 1.2 to 2.0 based on risk factor
+
+    # DEPRECATED formula (kept for reference)
+    risk_factor = min(1.0, total_base_risk * 10)
     final_multiplier = base_amplification + (0.8 * risk_factor)
 
     return CLIMADAHazardData(
@@ -159,32 +218,141 @@ def calculate_compound_risk(
         flood_outage_rate=flood_outage,
         slr_capacity_derate=slr_derate,
         compound_multiplier=final_multiplier,
-        notes=f"Compound risk with {final_multiplier:.2f}x amplification (System Stress: {total_base_risk:.1%})"
+        notes=f"DEPRECATED: {final_multiplier:.2f}x amplification (use calculate_compound_risk instead)"
     )
 
 
 def get_hazard_description(hazard: CLIMADAHazardData) -> str:
-    """Generate a human-readable description of the hazard profile."""
+    """
+    Generate a human-readable description of the hazard profile.
+
+    CORRECTED: Thresholds updated for realistic values.
+    - Old: >1% = "High", >0.5% = "Severe"
+    - New: >0.1% = "Elevated", >0.05% = "Moderate"
+    """
     parts = []
-    if hazard.wildfire_outage_rate > 0.01:
-        parts.append(f"High Wildfire Risk ({hazard.wildfire_outage_rate:.1%})")
+
+    # Wildfire thresholds (corrected for Korea)
+    if hazard.wildfire_outage_rate > 0.001:  # >0.1%
+        parts.append(f"Elevated Wildfire Risk ({hazard.wildfire_outage_rate:.4%})")
+    elif hazard.wildfire_outage_rate > 0.0005:  # >0.05%
+        parts.append(f"Moderate Wildfire Risk ({hazard.wildfire_outage_rate:.4%})")
     elif hazard.wildfire_outage_rate > 0:
-        parts.append(f"Moderate Wildfire Risk ({hazard.wildfire_outage_rate:.1%})")
-        
-    if hazard.flood_outage_rate > 0.005:
-        parts.append(f"Severe Flood Risk ({hazard.flood_outage_rate:.1%})")
+        parts.append(f"Low Wildfire Risk ({hazard.wildfire_outage_rate:.4%})")
+
+    # Flood thresholds (corrected for Samcheok elevation)
+    if hazard.flood_outage_rate > 0.0005:  # >0.05%
+        parts.append(f"Elevated Flood Risk ({hazard.flood_outage_rate:.4%})")
+    elif hazard.flood_outage_rate > 0.0001:  # >0.01%
+        parts.append(f"Moderate Flood Risk ({hazard.flood_outage_rate:.4%})")
     elif hazard.flood_outage_rate > 0:
-        parts.append(f"Flood Risk ({hazard.flood_outage_rate:.1%})")
-        
-    if hazard.slr_capacity_derate > 0.02:
-        parts.append(f"Critical SLR Impact ({hazard.slr_capacity_derate:.1%})")
+        parts.append(f"Low Flood Risk ({hazard.flood_outage_rate:.4%})")
+
+    # SLR thresholds (corrected for realistic values)
+    if hazard.slr_capacity_derate > 0.002:  # >0.2%
+        parts.append(f"Noticeable SLR Impact ({hazard.slr_capacity_derate:.4%})")
+    elif hazard.slr_capacity_derate > 0.0005:  # >0.05%
+        parts.append(f"Minor SLR Impact ({hazard.slr_capacity_derate:.4%})")
     elif hazard.slr_capacity_derate > 0:
-        parts.append(f"SLR Derating ({hazard.slr_capacity_derate:.1%})")
-        
-    if hazard.compound_multiplier > 1.0:
-        parts.append(f"Compound Amplification ({hazard.compound_multiplier:.1f}x)")
-        
+        parts.append(f"Negligible SLR Impact ({hazard.slr_capacity_derate:.4%})")
+
+    # Compound multiplier (corrected range)
+    if hazard.compound_multiplier > 1.15:
+        parts.append(f"Significant Compound Amplification ({hazard.compound_multiplier:.2f}x)")
+    elif hazard.compound_multiplier > 1.05:
+        parts.append(f"Mild Compound Amplification ({hazard.compound_multiplier:.2f}x)")
+    elif hazard.compound_multiplier > 1.0:
+        parts.append(f"Minimal Compound Effect ({hazard.compound_multiplier:.2f}x)")
+
     return ", ".join(parts) if parts else "Low Physical Risk"
+
+
+def create_corrected_baseline(target_year: int = 2024, rcp: str = "current") -> CLIMADAHazardData:
+    """
+    Create hazard data using corrected literature parameters.
+
+    Uses the corrected formulas from literature_parameters.py.
+
+    Args:
+        target_year: Target year for projections
+        rcp: RCP scenario ("current", "RCP4.5", "RCP8.5")
+
+    Returns:
+        CLIMADAHazardData with corrected values
+    """
+    # Get climate multipliers based on scenario
+    if rcp == "current" or target_year <= 2024:
+        wildfire_mult = 1.0
+        flood_mult = 1.0
+    elif rcp == "RCP4.5":
+        if target_year <= 2030:
+            wildfire_mult = CLIMATE_MULTIPLIERS["wildfire_rcp45_2030"]
+        elif target_year <= 2050:
+            wildfire_mult = CLIMATE_MULTIPLIERS["wildfire_rcp45_2050"]
+        else:
+            wildfire_mult = CLIMATE_MULTIPLIERS["wildfire_rcp45_2100"]
+        flood_mult = CLIMATE_MULTIPLIERS["flood_2050_multiplier"] if target_year >= 2050 else 1.0
+    else:  # RCP8.5
+        if target_year <= 2030:
+            wildfire_mult = CLIMATE_MULTIPLIERS["wildfire_rcp85_2030"]
+        elif target_year <= 2050:
+            wildfire_mult = CLIMATE_MULTIPLIERS["wildfire_rcp85_2050"]
+        else:
+            wildfire_mult = CLIMATE_MULTIPLIERS["wildfire_rcp85_2100"]
+        flood_mult = CLIMATE_MULTIPLIERS["flood_2100_multiplier"] if target_year >= 2100 else \
+                     CLIMATE_MULTIPLIERS["flood_2050_multiplier"] if target_year >= 2050 else 1.0
+
+    # Calculate using corrected formulas
+    wildfire_rate = lit_wildfire_rate(climate_multiplier=wildfire_mult)
+
+    # Flood rate with climate adjustment
+    base_flood = lit_flood_rate()
+    flood_rate = base_flood * flood_mult
+
+    # SLR derate based on scenario projections
+    if rcp == "current" or target_year <= 2024:
+        slr_m = 0.0
+    elif rcp == "RCP4.5":
+        if target_year <= 2030:
+            slr_m = SLR_PARAMS["rcp45_slr_2030_m"].value
+        else:
+            slr_m = SLR_PARAMS["rcp45_slr_2050_m"].value
+    else:
+        if target_year <= 2030:
+            slr_m = SLR_PARAMS["rcp85_slr_2030_m"].value
+        elif target_year <= 2050:
+            slr_m = SLR_PARAMS["rcp85_slr_2050_m"].value
+        else:
+            slr_m = SLR_PARAMS["rcp85_slr_2100_m"].value
+
+    slr_derate = lit_slr_derate(slr_m)
+
+    # Determine severity for compound multiplier
+    if rcp == "current":
+        severity = "baseline"
+    elif rcp == "RCP4.5":
+        severity = "moderate" if target_year >= 2050 else "baseline"
+    else:
+        if target_year >= 2060:
+            severity = "extreme"
+        elif target_year >= 2050:
+            severity = "high"
+        elif target_year >= 2030:
+            severity = "moderate"
+        else:
+            severity = "baseline"
+
+    compound_mult = lit_compound_mult(wildfire_rate, flood_rate, slr_derate, severity)
+
+    return CLIMADAHazardData(
+        wildfire_outage_rate=wildfire_rate,
+        flood_outage_rate=flood_rate,
+        slr_capacity_derate=slr_derate,
+        compound_multiplier=compound_mult,
+        slr_meters=slr_m,
+        data_source=f"Corrected literature parameters ({rcp} {target_year})",
+        notes="Based on Korea-specific data, not California"
+    )
 
 
 def interpolate_hazard_by_year(

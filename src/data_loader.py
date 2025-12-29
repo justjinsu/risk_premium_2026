@@ -192,6 +192,9 @@ class DataLoader:
     def load_physical_scenarios(self) -> Dict[str, PhysicalScenario]:
         path = self.input_dir / "physical_scenarios.csv"
         if not path.exists():
+            path = self.input_dir / "literature_hazards.csv"
+        if not path.exists():
+            # Legacy fallback
             path = self.input_dir / "climada_hazards.csv"
         
         df = pd.read_csv(path)
