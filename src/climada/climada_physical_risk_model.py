@@ -1,97 +1,32 @@
 """
-CLIMADA Physical Risk Model with Temperature Efficiency.
+CLIMADA Physical Risk Model for Samcheok Blue Power Plant.
 
-Integrates:
-1. CLIMADA API hazard data (Wildfire, TC, River Flood)
-2. Temperature efficiency derate (from literature)
-3. Sea level rise projections (CMIP6)
-
-All values verified against original sources.
+This model reads ALL inputs from CSV files:
+- input/climada_data.csv: CLIMADA API outputs
+- input/literature_data.csv: Verified literature values
+- input/model_assumptions.csv: Modeling assumptions
 
 Run: python -m src.climada.climada_physical_risk_model
+
+Version: 2.0 (CSV-based pipeline)
+Date: December 29, 2024
 """
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, List, Optional
-
-import numpy as np
-
-from climada.util.api_client import Client
-from climada.hazard import Hazard
+import pandas as pd
 
 
 # =============================================================================
-# SAMCHEOK LOCATION
+# PATHS
 # =============================================================================
 
-SAMCHEOK_LAT = 37.4404
-SAMCHEOK_LON = 129.1671
-SAMCHEOK_ELEVATION_M = 10.0
-PLANT_CAPACITY_MW = 2100
-PLANT_TYPE = "Coal-fired thermal"
-
-# =============================================================================
-# VERIFIED TEMPERATURE PROJECTIONS (Kim et al. 2016, DOI:10.1007/s13143-016-0017-9)
-# =============================================================================
-
-KOREA_TEMP_PROJECTIONS_RCP85 = {
-    2024: 0.0,      # Baseline
-    2030: 1.0,      # Interpolated
-    2050: 1.75,     # Mid-century verified
-    2100: 4.73,     # End-century verified
-}
-
-# =============================================================================
-# VERIFIED EFFICIENCY DERATE FACTORS
-# =============================================================================
-
-# Ambient temperature derate: 0.06-0.1% efficiency per °C (Wärtsilä, IJCSI 2013)
-AMBIENT_TEMP_DERATE_PER_C = 0.08  # % efficiency loss per °C
-
-# Cooling water temperature derate: 0.14% per °C (Kim & Jeong 2013)
-COOLING_WATER_DERATE_PER_C = 0.14  # % efficiency loss per °C
-
-# SST tracks ~80% of air temperature change
-SST_TO_AIR_RATIO = 0.8
-
-# Combined derate factor
-COMBINED_TEMP_DERATE_PER_C = AMBIENT_TEMP_DERATE_PER_C + SST_TO_AIR_RATIO * COOLING_WATER_DERATE_PER_C
-
-# Heat wave parameters (WWA 2025, Korea Herald)
-HEAT_WAVE_EFFICIENCY_LOSS = 4.0  # % during extreme heat
-HEAT_WAVE_DAYS_2024 = 5.0
-HEAT_WAVE_DAYS_2100_SSP585 = 17.4
-
-# =============================================================================
-# VERIFIED CLIMATE FACTORS
-# =============================================================================
-
-# WWA 2025: "twice as likely" at 1.3°C, "further doubling" at 2.6°C
-WILDFIRE_CLIMATE_FACTORS = {
-    2024: 1.0,
-    2030: 2.0,   # Using current climate (1.3°C) value
-    2050: 2.0,   # Verified "twice as likely"
-    2100: 4.0,   # Verified "further doubling"
-}
-
-# Knutson 2020: +1-10% TC intensity per 2°C
-TC_CLIMATE_FACTORS = {
-    2024: 1.0,
-    2030: 1.05,  # +5% for ~1°C warming
-    2050: 1.10,  # +10% for 1.75°C (using upper bound)
-    2100: 1.10,  # +10% (paper says +1-10% per 2°C)
-}
-
-# CMIP6 Korea: 0.63m by 2100 (DOI:10.3390/jmse9101094)
-SLR_PROJECTIONS_M = {
-    2024: 0.00,
-    2030: 0.06,  # Interpolated
-    2050: 0.18,  # Interpolated
-    2100: 0.63,  # Verified
-}
+DATA_DIR = Path(__file__).parent.parent.parent / "data" / "physical_risk_steps"
+INPUT_DIR = DATA_DIR / "input"
+OUTPUT_DIR = DATA_DIR / "output"
 
 
 # =============================================================================
@@ -106,7 +41,7 @@ class HazardResult:
     climate_factor: float
     projected_outage_rate: float
     source: str
-    verification_status: str
+    status: str
 
 
 @dataclass
@@ -117,7 +52,6 @@ class TemperatureResult:
     mean_temp_derate: float
     heat_wave_derate: float
     total_temp_derate: float
-    sources: List[str]
 
 
 @dataclass
@@ -125,173 +59,166 @@ class PhysicalRiskSummary:
     """Complete physical risk summary."""
     year: int
     scenario: str
-
-    # Acute hazards (outage rates)
     wildfire: HazardResult
     tropical_cyclone: HazardResult
     river_flood: HazardResult
-
-    # Chronic impacts (efficiency derate)
     temperature: TemperatureResult
     sea_level_rise_m: float
-
-    # Aggregated
     total_acute_outage: float
     total_chronic_derate: float
     total_physical_risk: float
 
 
 # =============================================================================
-# CLIMADA ANALYSIS FUNCTIONS
+# DATA LOADING FUNCTIONS
 # =============================================================================
 
-def get_hazard_at_location(hazard: Hazard, lat: float, lon: float):
-    """Extract hazard at nearest centroid."""
-    lat_diff = hazard.centroids.lat - lat
-    lon_diff = hazard.centroids.lon - lon
-    distances = np.sqrt(lat_diff**2 + lon_diff**2)
-    nearest_idx = np.argmin(distances)
-
-    dist_km = distances[nearest_idx] * 111
-    intensities = hazard.intensity[:, nearest_idx].toarray().flatten()
-    nonzero = intensities[intensities > 0]
-
-    return {
-        'n_events': len(nonzero),
-        'total_events': len(intensities),
-        'max_intensity': float(nonzero.max()) if len(nonzero) > 0 else 0.0,
-        'distance_km': dist_km,
-        'intensities': intensities
-    }
+def load_climada_data() -> pd.DataFrame:
+    """Load CLIMADA API data from CSV."""
+    path = INPUT_DIR / "climada_data.csv"
+    print(f"Loading CLIMADA data from: {path}")
+    return pd.read_csv(path)
 
 
-def analyze_climada_hazards() -> Dict[str, HazardResult]:
-    """
-    Analyze all CLIMADA hazards for Samcheok.
+def load_literature_data() -> pd.DataFrame:
+    """Load literature values from CSV."""
+    path = INPUT_DIR / "literature_data.csv"
+    print(f"Loading literature data from: {path}")
+    return pd.read_csv(path)
 
-    Returns base rates from CLIMADA API.
-    """
-    print("Downloading CLIMADA hazard data...")
-    client = Client()
+
+def load_assumptions() -> pd.DataFrame:
+    """Load model assumptions from CSV."""
+    path = INPUT_DIR / "model_assumptions.csv"
+    print(f"Loading assumptions from: {path}")
+    return pd.read_csv(path)
+
+
+def get_literature_value(df: pd.DataFrame, category: str, parameter: str,
+                         year: Optional[int] = None) -> float:
+    """Extract a specific value from literature data."""
+    mask = (df['category'] == category) & (df['parameter'] == parameter)
+    if year is not None:
+        # Try exact year match first
+        year_mask = mask & (df['year'].astype(str) == str(year))
+        if year_mask.any():
+            return df.loc[year_mask, 'value'].iloc[0]
+        # Fall back to 'all' if no year-specific value
+        year_mask = mask & (df['year'].astype(str) == 'all')
+        if year_mask.any():
+            return df.loc[year_mask, 'value'].iloc[0]
+    return df.loc[mask, 'value'].iloc[0]
+
+
+def get_assumption(df: pd.DataFrame, parameter: str) -> float:
+    """Extract a specific assumption value."""
+    mask = df['parameter'] == parameter
+    return df.loc[mask, 'value'].iloc[0]
+
+
+# =============================================================================
+# CALCULATION FUNCTIONS
+# =============================================================================
+
+def calculate_base_outage_rates(climada_df: pd.DataFrame,
+                                 assumptions_df: pd.DataFrame) -> Dict[str, HazardResult]:
+    """Calculate base outage rates from CLIMADA data."""
     results = {}
+    hours_per_year = get_assumption(assumptions_df, 'hours_per_year')
 
-    # 1. WILDFIRE
-    print("  - Wildfire (NASA FIRMS)...")
-    try:
-        wf = client.get_hazard('wildfire', properties={'country_iso3alpha': 'KOR'})
-        wf_data = get_hazard_at_location(wf, SAMCHEOK_LAT, SAMCHEOK_LON)
+    # Wildfire
+    wf_row = climada_df[climada_df['hazard'] == 'wildfire'].iloc[0]
+    wf_events = wf_row['events_at_location']
+    wf_years = wf_row['years_covered']
+    wf_prob = get_assumption(assumptions_df, 'outage_prob_wildfire')
+    wf_duration = get_assumption(assumptions_df, 'outage_duration_wildfire')
 
-        # 6 events / 20 years × 10% outage probability × 24hr/8760hr
-        years = 20
-        annual_freq = wf_data['n_events'] / years
-        base_rate = annual_freq * 0.10 * (24 / 8760)
+    wf_annual_freq = wf_events / wf_years
+    wf_base_rate = wf_annual_freq * wf_prob * (wf_duration / hours_per_year)
 
-        results['wildfire'] = HazardResult(
-            hazard_type="Wildfire",
-            base_outage_rate=base_rate,
-            climate_factor=1.0,
-            projected_outage_rate=base_rate,
-            source="CLIMADA API (NASA FIRMS 2001-2020)",
-            verification_status="VERIFIED"
-        )
-        print(f"    {wf_data['n_events']} events → {base_rate:.4%} base rate")
-    except Exception as e:
-        print(f"    Error: {e}")
-        results['wildfire'] = None
+    results['wildfire'] = HazardResult(
+        hazard_type="Wildfire",
+        base_outage_rate=wf_base_rate,
+        climate_factor=1.0,
+        projected_outage_rate=wf_base_rate,
+        source=f"CLIMADA: {wf_events} events / {wf_years} years",
+        status="API_OUTPUT + ASSUMPTION"
+    )
 
-    # 2. TROPICAL CYCLONE
-    print("  - Tropical Cyclone (IBTrACS)...")
-    try:
-        tc = client.get_hazard('tropical_cyclone', properties={
-            'country_iso3alpha': 'KOR',
-            'event_type': 'observed'
-        })
-        tc_data = get_hazard_at_location(tc, SAMCHEOK_LAT, SAMCHEOK_LON)
+    # Tropical Cyclone (damaging events only)
+    tc_row = climada_df[climada_df['hazard'] == 'tropical_cyclone_damaging'].iloc[0]
+    tc_events = tc_row['events_at_location']
+    tc_years = tc_row['years_covered']
+    tc_prob = get_assumption(assumptions_df, 'outage_prob_tc')
+    tc_duration = get_assumption(assumptions_df, 'outage_duration_tc')
 
-        # Count damaging events (>30 m/s)
-        damaging = tc_data['intensities'][tc_data['intensities'] > 30]
-        n_damaging = len(damaging)
+    tc_annual_freq = tc_events / tc_years
+    tc_base_rate = tc_annual_freq * tc_prob * (tc_duration / hours_per_year)
 
-        # 5 damaging / 40 years × 30% outage probability × 48hr/8760hr
-        years = 40
-        annual_freq = n_damaging / years
-        base_rate = annual_freq * 0.30 * (48 / 8760)
+    results['tropical_cyclone'] = HazardResult(
+        hazard_type="Tropical Cyclone",
+        base_outage_rate=tc_base_rate,
+        climate_factor=1.0,
+        projected_outage_rate=tc_base_rate,
+        source=f"CLIMADA: {tc_events} damaging events / {tc_years} years",
+        status="API_OUTPUT + ASSUMPTION"
+    )
 
-        results['tropical_cyclone'] = HazardResult(
-            hazard_type="Tropical Cyclone",
-            base_outage_rate=base_rate,
-            climate_factor=1.0,
-            projected_outage_rate=base_rate,
-            source="CLIMADA API (IBTrACS 1980-2020)",
-            verification_status="VERIFIED"
-        )
-        print(f"    {n_damaging} damaging events → {base_rate:.4%} base rate")
-    except Exception as e:
-        print(f"    Error: {e}")
-        results['tropical_cyclone'] = None
+    # River Flood
+    fl_row = climada_df[climada_df['hazard'] == 'river_flood_rcp85'].iloc[0]
+    fl_events = fl_row['events_at_location']
 
-    # 3. RIVER FLOOD
-    print("  - River Flood (ISIMIP)...")
-    try:
-        fl = client.get_hazard('river_flood', properties={
-            'country_iso3alpha': 'KOR',
-            'climate_scenario': 'rcp85',
-            'year_range': '2030_2050'
-        })
-        fl_data = get_hazard_at_location(fl, SAMCHEOK_LAT, SAMCHEOK_LON)
-
-        # No flooding at 10m coastal elevation
-        base_rate = 0.0
-
-        results['river_flood'] = HazardResult(
-            hazard_type="River Flood",
-            base_outage_rate=base_rate,
-            climate_factor=1.0,
-            projected_outage_rate=base_rate,
-            source="CLIMADA API (ISIMIP RCP8.5)",
-            verification_status="VERIFIED"
-        )
-        print(f"    {fl_data['n_events']} events at location → {base_rate:.4%} (10m elevation)")
-    except Exception as e:
-        print(f"    Error: {e}")
-        results['river_flood'] = None
+    results['river_flood'] = HazardResult(
+        hazard_type="River Flood",
+        base_outage_rate=0.0,
+        climate_factor=1.0,
+        projected_outage_rate=0.0,
+        source=f"CLIMADA: {fl_events} events (riverine only, 10m elevation)",
+        status="API_OUTPUT"
+    )
 
     return results
 
 
-def calculate_temperature_impact(year: int) -> TemperatureResult:
-    """
-    Calculate temperature efficiency derate for given year.
+def calculate_temperature_impact(year: int, lit_df: pd.DataFrame,
+                                  assumptions_df: pd.DataFrame) -> TemperatureResult:
+    """Calculate temperature efficiency derate for given year."""
+    hours_per_year = get_assumption(assumptions_df, 'hours_per_year')
 
-    Based on:
-    - Kim et al. 2016: Korea RCP8.5 temperature projections
-    - Wärtsilä/IJCSI: 0.08% efficiency loss per °C ambient
-    - Kim & Jeong 2013: 0.14% efficiency loss per °C cooling water
-    """
     # Get temperature change
-    if year in KOREA_TEMP_PROJECTIONS_RCP85:
-        delta_t = KOREA_TEMP_PROJECTIONS_RCP85[year]
+    if year == 2024:
+        delta_t = 0.0
+    elif year == 2030:
+        delta_t = get_literature_value(lit_df, 'TEMPERATURE', 'korea_temp_change', 2030)
+    elif year <= 2050:
+        delta_t = get_literature_value(lit_df, 'TEMPERATURE', 'korea_temp_change', '2026-2050')
     else:
-        # Linear interpolation
-        years = sorted(KOREA_TEMP_PROJECTIONS_RCP85.keys())
-        for i in range(len(years) - 1):
-            if years[i] <= year < years[i+1]:
-                t1, t2 = years[i], years[i+1]
-                v1, v2 = KOREA_TEMP_PROJECTIONS_RCP85[t1], KOREA_TEMP_PROJECTIONS_RCP85[t2]
-                delta_t = v1 + (v2 - v1) * (year - t1) / (t2 - t1)
-                break
-        else:
-            delta_t = KOREA_TEMP_PROJECTIONS_RCP85[2100]
+        delta_t = get_literature_value(lit_df, 'TEMPERATURE', 'korea_temp_change', '2076-2100')
 
-    # Mean temperature derate
-    mean_temp_derate = delta_t * COMBINED_TEMP_DERATE_PER_C / 100
+    # Get derate factors
+    ambient_derate = get_literature_value(lit_df, 'EFFICIENCY', 'ambient_derate_model')
+    cooling_derate = get_literature_value(lit_df, 'EFFICIENCY', 'cooling_water_derate')
+    sst_ratio = get_literature_value(lit_df, 'EFFICIENCY', 'sst_air_ratio')
+
+    # Combined derate (convert from %/C to fraction)
+    combined_derate_per_c = (ambient_derate + sst_ratio * cooling_derate) / 100
+    mean_temp_derate = delta_t * combined_derate_per_c
 
     # Heat wave derate
+    hw_days_base = get_literature_value(lit_df, 'HEATWAVE', 'days_baseline', 2024)
+    hw_days_2100 = get_literature_value(lit_df, 'HEATWAVE', 'days_future', 2100)
+    hw_efficiency_loss = get_literature_value(lit_df, 'HEATWAVE', 'efficiency_loss') / 100
+
     # Interpolate heat wave days
-    hw_days = HEAT_WAVE_DAYS_2024 + (HEAT_WAVE_DAYS_2100_SSP585 - HEAT_WAVE_DAYS_2024) * \
-              (year - 2024) / (2100 - 2024)
+    if year <= 2024:
+        hw_days = hw_days_base
+    elif year >= 2100:
+        hw_days = hw_days_2100
+    else:
+        hw_days = hw_days_base + (hw_days_2100 - hw_days_base) * (year - 2024) / (2100 - 2024)
+
     hw_hours = hw_days * 24
-    heat_wave_derate = (hw_hours / 8760) * (HEAT_WAVE_EFFICIENCY_LOSS / 100)
+    heat_wave_derate = (hw_hours / hours_per_year) * hw_efficiency_loss
 
     total = mean_temp_derate + heat_wave_derate
 
@@ -300,66 +227,63 @@ def calculate_temperature_impact(year: int) -> TemperatureResult:
         delta_t=delta_t,
         mean_temp_derate=mean_temp_derate,
         heat_wave_derate=heat_wave_derate,
-        total_temp_derate=total,
-        sources=[
-            "Kim et al. 2016 (DOI:10.1007/s13143-016-0017-9)",
-            "Wärtsilä/IJCSI 2013",
-            "WWA 2025 / Korea Herald"
-        ]
+        total_temp_derate=total
     )
 
 
+def get_climate_factor(lit_df: pd.DataFrame, category: str, year: int) -> float:
+    """Get climate factor for a hazard at given year."""
+    return get_literature_value(lit_df, category, 'climate_factor', year)
+
+
+def get_slr(lit_df: pd.DataFrame, year: int) -> float:
+    """Get sea level rise projection for given year."""
+    return get_literature_value(lit_df, 'SLR', 'korea_projection', year)
+
+
 def calculate_physical_risk(year: int, scenario: str = "RCP8.5") -> PhysicalRiskSummary:
-    """
-    Calculate complete physical risk for given year.
+    """Calculate complete physical risk for given year."""
 
-    Combines:
-    1. CLIMADA hazard data (base rates)
-    2. Climate factors (WWA, Knutson)
-    3. Temperature efficiency derate
-    4. Sea level rise
-    """
-    # Get CLIMADA base rates
-    climada_results = analyze_climada_hazards()
+    # Load all data from CSV files
+    climada_df = load_climada_data()
+    lit_df = load_literature_data()
+    assumptions_df = load_assumptions()
 
-    # Apply climate factors
-    wf_factor = WILDFIRE_CLIMATE_FACTORS.get(year, WILDFIRE_CLIMATE_FACTORS[2100])
-    tc_factor = TC_CLIMATE_FACTORS.get(year, TC_CLIMATE_FACTORS[2100])
+    # Calculate base rates from CLIMADA
+    base_rates = calculate_base_outage_rates(climada_df, assumptions_df)
 
-    wildfire = None
-    if climada_results.get('wildfire'):
-        wf = climada_results['wildfire']
-        wildfire = HazardResult(
-            hazard_type=wf.hazard_type,
-            base_outage_rate=wf.base_outage_rate,
-            climate_factor=wf_factor,
-            projected_outage_rate=wf.base_outage_rate * wf_factor,
-            source=wf.source + f" × WWA 2025 ({wf_factor}x)",
-            verification_status="VERIFIED" if year in [2050, 2100] else "DERIVED"
-        )
+    # Apply climate factors from literature
+    wf_factor = get_climate_factor(lit_df, 'WILDFIRE', year)
+    tc_factor = get_climate_factor(lit_df, 'TC', year)
 
-    tropical_cyclone = None
-    if climada_results.get('tropical_cyclone'):
-        tc = climada_results['tropical_cyclone']
-        tropical_cyclone = HazardResult(
-            hazard_type=tc.hazard_type,
-            base_outage_rate=tc.base_outage_rate,
-            climate_factor=tc_factor,
-            projected_outage_rate=tc.base_outage_rate * tc_factor,
-            source=tc.source + f" × Knutson 2020 ({tc_factor}x)",
-            verification_status="DERIVED"
-        )
+    wildfire = HazardResult(
+        hazard_type="Wildfire",
+        base_outage_rate=base_rates['wildfire'].base_outage_rate,
+        climate_factor=wf_factor,
+        projected_outage_rate=base_rates['wildfire'].base_outage_rate * wf_factor,
+        source=base_rates['wildfire'].source + f" × WWA factor {wf_factor}x",
+        status="VERIFIED" if year in [2050, 2100] else "ASSUMPTION"
+    )
 
-    river_flood = climada_results.get('river_flood')
+    tropical_cyclone = HazardResult(
+        hazard_type="Tropical Cyclone",
+        base_outage_rate=base_rates['tropical_cyclone'].base_outage_rate,
+        climate_factor=tc_factor,
+        projected_outage_rate=base_rates['tropical_cyclone'].base_outage_rate * tc_factor,
+        source=base_rates['tropical_cyclone'].source + f" × Knutson factor {tc_factor}x",
+        status="DERIVED" if year == 2050 else "ASSUMPTION"
+    )
+
+    river_flood = base_rates['river_flood']
 
     # Temperature impact
-    temperature = calculate_temperature_impact(year)
+    temperature = calculate_temperature_impact(year, lit_df, assumptions_df)
 
     # Sea level rise
-    slr = SLR_PROJECTIONS_M.get(year, SLR_PROJECTIONS_M[2100])
+    slr = get_slr(lit_df, year)
 
-    # Aggregate
-    total_acute = sum(h.projected_outage_rate for h in [wildfire, tropical_cyclone, river_flood] if h)
+    # Totals
+    total_acute = wildfire.projected_outage_rate + tropical_cyclone.projected_outage_rate + river_flood.projected_outage_rate
     total_chronic = temperature.total_temp_derate
     total_risk = total_acute + total_chronic
 
@@ -377,58 +301,69 @@ def calculate_physical_risk(year: int, scenario: str = "RCP8.5") -> PhysicalRisk
     )
 
 
-def save_model_output(results: List[PhysicalRiskSummary], output_dir: Path):
-    """Save model results to CSV."""
-    output_file = output_dir / "CLIMADA_INTEGRATED_MODEL.csv"
+def save_output(results: List[PhysicalRiskSummary]):
+    """Save results to CSV."""
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_file = OUTPUT_DIR / "physical_risk_output.csv"
 
     with open(output_file, 'w', newline='') as f:
         writer = csv.writer(f)
         writer.writerow([
             'year', 'scenario',
-            'wildfire_base', 'wildfire_factor', 'wildfire_projected',
-            'tc_base', 'tc_factor', 'tc_projected',
-            'flood_rate',
-            'temp_delta_c', 'temp_derate', 'heat_wave_derate', 'temp_total',
+            'wildfire_base_pct', 'wildfire_factor', 'wildfire_projected_pct', 'wildfire_status',
+            'tc_base_pct', 'tc_factor', 'tc_projected_pct', 'tc_status',
+            'flood_pct',
+            'temp_delta_c', 'temp_mean_derate_pct', 'temp_heatwave_pct', 'temp_total_pct',
             'slr_m',
-            'total_acute', 'total_chronic', 'total_physical_risk',
-            'verification_status'
+            'total_acute_pct', 'total_chronic_pct', 'total_risk_pct'
         ])
 
         for r in results:
             writer.writerow([
                 r.year, r.scenario,
-                f"{r.wildfire.base_outage_rate:.6%}" if r.wildfire else "N/A",
-                f"{r.wildfire.climate_factor:.2f}" if r.wildfire else "N/A",
-                f"{r.wildfire.projected_outage_rate:.6%}" if r.wildfire else "N/A",
-                f"{r.tropical_cyclone.base_outage_rate:.6%}" if r.tropical_cyclone else "N/A",
-                f"{r.tropical_cyclone.climate_factor:.2f}" if r.tropical_cyclone else "N/A",
-                f"{r.tropical_cyclone.projected_outage_rate:.6%}" if r.tropical_cyclone else "N/A",
-                f"{r.river_flood.projected_outage_rate:.6%}" if r.river_flood else "N/A",
+                f"{r.wildfire.base_outage_rate:.6f}",
+                f"{r.wildfire.climate_factor:.2f}",
+                f"{r.wildfire.projected_outage_rate:.6f}",
+                r.wildfire.status,
+                f"{r.tropical_cyclone.base_outage_rate:.6f}",
+                f"{r.tropical_cyclone.climate_factor:.2f}",
+                f"{r.tropical_cyclone.projected_outage_rate:.6f}",
+                r.tropical_cyclone.status,
+                f"{r.river_flood.projected_outage_rate:.6f}",
                 f"{r.temperature.delta_t:.2f}",
-                f"{r.temperature.mean_temp_derate:.4%}",
-                f"{r.temperature.heat_wave_derate:.4%}",
-                f"{r.temperature.total_temp_derate:.4%}",
+                f"{r.temperature.mean_temp_derate:.6f}",
+                f"{r.temperature.heat_wave_derate:.6f}",
+                f"{r.temperature.total_temp_derate:.6f}",
                 f"{r.sea_level_rise_m:.2f}",
-                f"{r.total_acute_outage:.4%}",
-                f"{r.total_chronic_derate:.4%}",
-                f"{r.total_physical_risk:.4%}",
-                "VERIFIED" if r.year in [2050, 2100] else "DERIVED"
+                f"{r.total_acute_outage:.6f}",
+                f"{r.total_chronic_derate:.6f}",
+                f"{r.total_physical_risk:.6f}"
             ])
 
-    print(f"\nSaved to: {output_file}")
+    print(f"\nOutput saved to: {output_file}")
 
 
 def run_full_analysis():
     """Run complete physical risk analysis."""
     print("=" * 70)
-    print("CLIMADA INTEGRATED PHYSICAL RISK MODEL")
-    print("Samcheok Blue Power Plant (2.1 GW Coal)")
+    print("CLIMADA PHYSICAL RISK MODEL v2.0")
+    print("CSV-Based Data Pipeline")
     print("=" * 70)
-    print(f"\nLocation: {SAMCHEOK_LAT:.4f}°N, {SAMCHEOK_LON:.4f}°E")
-    print(f"Elevation: {SAMCHEOK_ELEVATION_M}m")
-    print(f"Scenario: RCP8.5 / SSP5-8.5")
+    print("\nSamcheok Blue Power Plant (37.4404°N, 129.1671°E)")
+    print("Scenario: RCP8.5 / SSP5-8.5")
     print()
 
+    # Load data
+    print("--- LOADING DATA FROM CSV FILES ---")
+    climada_df = load_climada_data()
+    lit_df = load_literature_data()
+    assumptions_df = load_assumptions()
+
+    print(f"  CLIMADA data: {len(climada_df)} records")
+    print(f"  Literature data: {len(lit_df)} records")
+    print(f"  Assumptions: {len(assumptions_df)} records")
+
+    # Run for each year
     years = [2024, 2030, 2050, 2100]
     results = []
 
@@ -440,59 +375,83 @@ def run_full_analysis():
         result = calculate_physical_risk(year)
         results.append(result)
 
-        print(f"\n--- ACUTE HAZARDS (Outage Rates) ---")
-        if result.wildfire:
-            print(f"  Wildfire:     {result.wildfire.base_outage_rate:.4%} × {result.wildfire.climate_factor:.1f}x = {result.wildfire.projected_outage_rate:.4%}")
-        if result.tropical_cyclone:
-            print(f"  TC:           {result.tropical_cyclone.base_outage_rate:.4%} × {result.tropical_cyclone.climate_factor:.2f}x = {result.tropical_cyclone.projected_outage_rate:.4%}")
-        if result.river_flood:
-            print(f"  River Flood:  {result.river_flood.projected_outage_rate:.4%}")
+        print(f"\n--- ACUTE HAZARDS ---")
+        print(f"  Wildfire:     {result.wildfire.base_outage_rate:.4%} × {result.wildfire.climate_factor:.1f}x = {result.wildfire.projected_outage_rate:.4%} [{result.wildfire.status}]")
+        print(f"  TC:           {result.tropical_cyclone.base_outage_rate:.4%} × {result.tropical_cyclone.climate_factor:.2f}x = {result.tropical_cyclone.projected_outage_rate:.4%} [{result.tropical_cyclone.status}]")
+        print(f"  River Flood:  {result.river_flood.projected_outage_rate:.4%} [{result.river_flood.status}]")
 
-        print(f"\n--- CHRONIC IMPACTS (Efficiency Derate) ---")
+        print(f"\n--- CHRONIC IMPACTS ---")
         print(f"  Temperature:  +{result.temperature.delta_t:.2f}°C → {result.temperature.total_temp_derate:.4%} derate")
         print(f"    - Mean temp:   {result.temperature.mean_temp_derate:.4%}")
         print(f"    - Heat waves:  {result.temperature.heat_wave_derate:.4%}")
         print(f"  Sea Level:    {result.sea_level_rise_m:.2f}m")
 
-        print(f"\n--- TOTAL PHYSICAL RISK ---")
-        print(f"  Acute (outage):  {result.total_acute_outage:.4%}")
-        print(f"  Chronic (derate):{result.total_chronic_derate:.4%}")
-        print(f"  TOTAL:           {result.total_physical_risk:.4%}")
+        print(f"\n--- TOTALS ---")
+        print(f"  Acute:   {result.total_acute_outage:.4%}")
+        print(f"  Chronic: {result.total_chronic_derate:.4%}")
+        print(f"  TOTAL:   {result.total_physical_risk:.4%}")
 
     # Summary table
     print("\n" + "=" * 70)
-    print("SUMMARY TABLE (RCP8.5)")
+    print("SUMMARY TABLE")
     print("=" * 70)
     print(f"\n{'Year':<8} {'Wildfire':>10} {'TC':>10} {'Flood':>10} {'Temp':>10} {'SLR':>8} {'TOTAL':>10}")
     print("-" * 70)
 
     for r in results:
-        wf = f"{r.wildfire.projected_outage_rate:.4%}" if r.wildfire else "N/A"
-        tc = f"{r.tropical_cyclone.projected_outage_rate:.4%}" if r.tropical_cyclone else "N/A"
-        fl = f"{r.river_flood.projected_outage_rate:.4%}" if r.river_flood else "N/A"
-        temp = f"{r.temperature.total_temp_derate:.4%}"
-        slr = f"{r.sea_level_rise_m:.2f}m"
-        total = f"{r.total_physical_risk:.4%}"
-        print(f"{r.year:<8} {wf:>10} {tc:>10} {fl:>10} {temp:>10} {slr:>8} {total:>10}")
-
-    print("\n" + "=" * 70)
-    print("KEY FINDING: Temperature efficiency loss is the DOMINANT risk factor")
-    print("=" * 70)
-    print(f"""
-    At 2100 (RCP8.5):
-    - Temperature derate: {results[-1].total_chronic_derate:.4%} ({results[-1].temperature.delta_t:.1f}°C warming)
-    - Acute hazards:      {results[-1].total_acute_outage:.4%}
-    - Ratio:              {results[-1].total_chronic_derate / results[-1].total_acute_outage:.1f}x
-
-    Temperature impacts are ~{results[-1].total_chronic_derate / results[-1].total_acute_outage:.0f}x larger than acute hazard outages!
-    """)
+        print(f"{r.year:<8} {r.wildfire.projected_outage_rate:>9.4%} {r.tropical_cyclone.projected_outage_rate:>9.4%} "
+              f"{r.river_flood.projected_outage_rate:>9.4%} {r.temperature.total_temp_derate:>9.4%} "
+              f"{r.sea_level_rise_m:>7.2f}m {r.total_physical_risk:>9.4%}")
 
     # Save output
-    output_dir = Path(__file__).parent.parent.parent / "data" / "physical_risk_steps"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    save_model_output(results, output_dir)
+    save_output(results)
+
+    # Data flow summary
+    print("\n" + "=" * 70)
+    print("DATA FLOW")
+    print("=" * 70)
+    print("""
+    INPUT FILES:
+    ├── input/climada_data.csv      → CLIMADA API outputs
+    ├── input/literature_data.csv   → Verified literature values
+    └── input/model_assumptions.csv → Modeling assumptions
+
+    PROCESSING:
+    ├── Base rates = CLIMADA events × assumptions
+    ├── Climate factors = Literature values
+    └── Temperature = Literature + assumptions
+
+    OUTPUT:
+    └── output/physical_risk_output.csv
+    """)
 
     return results
+
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+# Location constants (for external use)
+SAMCHEOK_LAT = 37.4404
+SAMCHEOK_LON = 129.1671
+
+# Climate factors (loaded from CSV when needed)
+def get_climate_factors():
+    """Load climate factors from literature CSV."""
+    lit_df = load_literature_data()
+    factors = {}
+    for year in [2024, 2030, 2050, 2100]:
+        factors[year] = {
+            'wildfire': get_climate_factor(lit_df, 'WILDFIRE', year),
+            'tc': get_climate_factor(lit_df, 'TC', year)
+        }
+    return factors
+
+WILDFIRE_CLIMATE_FACTORS = None  # Load lazily
+TC_CLIMATE_FACTORS = None
+KOREA_TEMP_PROJECTIONS_RCP85 = None
+SLR_PROJECTIONS_M = None
 
 
 if __name__ == "__main__":

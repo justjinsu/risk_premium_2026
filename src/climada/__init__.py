@@ -1,18 +1,16 @@
 """
 CLIMADA Physical Risk Model for Samcheok Blue Power Plant.
 
-Integrates:
-1. CLIMADA API data (Wildfire, TC, River Flood)
-2. Temperature efficiency derate (literature)
-3. Sea level rise projections (CMIP6)
+Reads ALL inputs from CSV files:
+- input/climada_data.csv: CLIMADA API outputs
+- input/literature_data.csv: Verified literature values
+- input/model_assumptions.csv: Modeling assumptions
 
 Run:
     python -m src.climada.climada_physical_risk_model
 
-Output:
-    data/physical_risk_steps/physical_risk_output.csv
-
-Version: 1.0 (December 2024)
+Version: 2.0 (CSV-based pipeline)
+Date: December 29, 2024
 """
 
 from .climada_physical_risk_model import (
@@ -20,7 +18,11 @@ from .climada_physical_risk_model import (
     run_full_analysis,
     calculate_physical_risk,
     calculate_temperature_impact,
-    analyze_climada_hazards,
+    calculate_base_outage_rates,
+    # Data loading
+    load_climada_data,
+    load_literature_data,
+    load_assumptions,
     # Data classes
     PhysicalRiskSummary,
     HazardResult,
@@ -28,24 +30,19 @@ from .climada_physical_risk_model import (
     # Constants
     SAMCHEOK_LAT,
     SAMCHEOK_LON,
-    KOREA_TEMP_PROJECTIONS_RCP85,
-    WILDFIRE_CLIMATE_FACTORS,
-    TC_CLIMATE_FACTORS,
-    SLR_PROJECTIONS_M,
 )
 
 __all__ = [
     'run_full_analysis',
     'calculate_physical_risk',
     'calculate_temperature_impact',
-    'analyze_climada_hazards',
+    'calculate_base_outage_rates',
+    'load_climada_data',
+    'load_literature_data',
+    'load_assumptions',
     'PhysicalRiskSummary',
     'HazardResult',
     'TemperatureResult',
     'SAMCHEOK_LAT',
     'SAMCHEOK_LON',
-    'KOREA_TEMP_PROJECTIONS_RCP85',
-    'WILDFIRE_CLIMATE_FACTORS',
-    'TC_CLIMATE_FACTORS',
-    'SLR_PROJECTIONS_M',
 ]
