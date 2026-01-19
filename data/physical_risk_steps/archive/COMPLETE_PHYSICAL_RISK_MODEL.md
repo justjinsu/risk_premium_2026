@@ -177,6 +177,5 @@ python -m src.climada.climada_physical_risk_model
 
 ---
 
-*Model completed: December 29, 2024*
 *All CLIMADA data verified via API calls to ETH Zurich servers*
 *Temperature projections from peer-reviewed literature*

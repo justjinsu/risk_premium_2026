@@ -1,6 +1,5 @@
 # Physical Risk Model - File Index
 
-**Last Updated**: December 29, 2024
 **Project**: Samcheok Blue Power Plant Physical Risk Assessment
 
 ---

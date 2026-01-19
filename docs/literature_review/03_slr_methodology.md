@@ -319,7 +319,7 @@ None of these mechanisms produce 2% derate per 0.1m SLR.
 
 ## 8. References
 
-All citations have been verified as of December 2024.
+All citations have been verified.
 
 1. **IPCC (2021)**. Climate Change 2021: The Physical Science Basis. AR6 WGI Chapter 9: Ocean, Cryosphere and Sea Level Change.
    - URL: https://www.ipcc.ch/report/ar6/wg1/chapter/chapter-9/
@@ -356,17 +356,15 @@ All citations have been verified as of December 2024.
 
 ## Citation Verification Log
 
-| Source | Verification Method | Date Verified | Corrections Made |
-|--------|---------------------|---------------|------------------|
-| IPCC AR6 | Official IPCC website | Dec 2024 | None |
-| van Vliet et al. (2016) | Nature journal, DOI confirmed | Dec 2024 | None |
-| Durmayaz & Sogut (2006) | Wiley journal, DOI confirmed | Dec 2024 | None |
-| Bierkandt et al. (2015) | IOP Science, DOI confirmed | Dec 2024 | Author name corrected from "Audoly" |
-| C40 Cities (2021) | Official C40 website | Dec 2024 | Date corrected from 2018 → 2021 |
-| NASA Sea Level Tool | Official NASA website | Dec 2024 | None |
+| Source | Verification Method | Corrections Made |
+|--------|---------------------|------------------|
+| IPCC AR6 | Official IPCC website | None |
+| van Vliet et al. (2016) | Nature journal, DOI confirmed | None |
+| Durmayaz & Sogut (2006) | Wiley journal, DOI confirmed | None |
+| Bierkandt et al. (2015) | IOP Science, DOI confirmed | Author name corrected from "Audoly" |
+| C40 Cities (2021) | Official C40 website | Date corrected from 2018 → 2021 |
+| NASA Sea Level Tool | Official NASA website | None |
 
 ---
 
-*Document created: December 2024*
-*Last updated: December 2024 - Citation Verification Complete*
 *Part of: Physical Risk Module Review - Step 5*

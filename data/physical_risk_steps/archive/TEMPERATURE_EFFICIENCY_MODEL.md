@@ -154,5 +154,4 @@ Heat wave derate = 418 hrs / 8760 hrs × 4% = 0.19%
 
 ---
 
-*Model created: December 29, 2024*
 *All values derived from verified literature sources*

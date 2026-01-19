@@ -198,5 +198,3 @@ We have **TWO separate approaches** for calculating physical risk:
 | Knutson (2020) | TC future | apply_climate_scenario_knu() |
 
 ---
-
-*Last Updated: December 29, 2024*

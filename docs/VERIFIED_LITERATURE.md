@@ -1028,5 +1028,4 @@ archive/deprecated_docs_2024/
 
 ---
 
-*Last updated: December 28, 2024*
 *Verification performed via DOI.org and journal websites*

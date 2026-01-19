@@ -144,5 +144,3 @@ Our physical risk model uses a **hybrid approach** combining CLIMADA API data wi
 | CMIP6 (2021) | 10.3390/atmos12010090 | SLR projections |
 
 ---
-
-*Last Updated: December 29, 2024*

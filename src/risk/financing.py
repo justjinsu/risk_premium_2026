@@ -1,7 +1,7 @@
 """
 Translate expected losses into financing spreads and Climate Risk Premium (CRP).
 
-ENHANCED (2024-12): Updated to work with extended credit rating scale (AAA to D)
+ENHANCED: Updated to work with extended credit rating scale (AAA to D)
 and counterfactual-based CRP calculation for proper climate risk pricing.
 """
 from __future__ import annotations

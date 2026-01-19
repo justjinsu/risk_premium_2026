@@ -303,7 +303,7 @@ def create_output_visualization(save_path: str = None):
     • Physical risk is MODEST (<0.5% even worst-case)
     • Transition risk (policy phase-out) is far greater
     • Values are Korea-specific (not California)
-    • All citations verified December 2024
+    • All citations verified
     """
 
     ax4.text(0.05, 0.95, insights, transform=ax4.transAxes,

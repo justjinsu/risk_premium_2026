@@ -3,7 +3,6 @@
 **Document Purpose**: This document provides complete traceability of all numerical values used in the Samcheok Blue Power Plant physical risk model. Each value is traced to its original source with exact quotes where available.
 
 **Prepared for**: Colleague Review
-**Date**: December 29, 2024
 **Model Location**: Samcheok Blue Power Plant (37.4404°N, 129.1671°E)
 
 ---
@@ -441,9 +440,9 @@ Total Efficiency Derate = ΔT × (Ambient + SST_ratio × Cooling)
 
 ## Document Control
 
-| Version | Date | Author | Changes |
-|---------|------|--------|---------|
-| 1.0 | 2024-12-29 | Physical Risk Team | Initial comprehensive review |
+| Version | Author | Changes |
+|---------|--------|---------|
+| 1.0 | Physical Risk Team | Initial comprehensive review |
 
 ---
 

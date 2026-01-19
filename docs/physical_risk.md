@@ -3,7 +3,6 @@
 ## For Reviewers: Complete Guide to the Samcheok Physical Risk Assessment
 
 **Document Version:** 1.0
-**Last Updated:** December 2024
 **Target Audience:** Academic reviewers, financial analysts, climate risk professionals
 
 ---
@@ -633,5 +632,4 @@ risk_premium_2026/
 
 ---
 
-*Document created: December 2024*
 *For questions, contact the model developers.*

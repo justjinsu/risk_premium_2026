@@ -92,20 +92,21 @@ def compute_cashflows_timeseries(
         - Efficiency loss reduces effective heat rate
     """
     # Extract plant parameters
-    capacity_mw = float(plant_params.get("capacity_mw", 2000))
-    price = float(plant_params.get("power_price_per_mwh", 80))
-    heat_rate = float(plant_params.get("heat_rate_mmbtu_mwh", 9.5))
-    fuel_price = float(plant_params.get("fuel_price_per_mmbtu", 3.2))
-    fixed_opex_per_kw = float(plant_params.get("fixed_opex_per_kw_year", 42))
-    variable_opex_per_mwh = float(plant_params.get("variable_opex_per_mwh", 4.5))
+    # Extract plant parameters (Assumes defaults are merged by caller)
+    capacity_mw = float(plant_params["capacity_mw"])
+    price = float(plant_params["power_price_per_mwh"])
+    heat_rate = float(plant_params["heat_rate_mmbtu_mwh"])
+    fuel_price = float(plant_params["fuel_price_per_mmbtu"])
+    fixed_opex_per_kw = float(plant_params["fixed_opex_per_kw_year"])
+    variable_opex_per_mwh = float(plant_params["variable_opex_per_mwh"])
 
     # Financial params for concretization
-    total_capex = float(plant_params.get("total_capex_million", 3200)) * 1e6
-    useful_life = int(plant_params.get("useful_life", 30))
-    tax_rate = float(plant_params.get("tax_rate", 0.24)) # Korean Corporate Tax ~24%
-    debt_fraction = float(plant_params.get("debt_fraction", 0.70))
-    debt_interest = float(plant_params.get("debt_interest_rate", 0.05))
-    debt_tenor = int(plant_params.get("debt_tenor_years", 20))
+    total_capex = float(plant_params["total_capex_million"]) * 1e6
+    useful_life = int(plant_params["useful_life"])
+    tax_rate = float(plant_params["tax_rate"])
+    debt_fraction = float(plant_params["debt_fraction"])
+    debt_interest = float(plant_params["debt_interest_rate"])
+    debt_tenor = int(plant_params["debt_tenor_years"])
 
     # Operating years
     n_years = transition_adj.operating_years

@@ -74,7 +74,11 @@
       "WebFetch(domain:www.climate.gov)",
       "WebFetch(domain:pubs.giss.nasa.gov)",
       "WebFetch(domain:www.giss.nasa.gov)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git reset:*)",
+      "Bash(git commit:*)",
+      "Bash(GIT_AUTHOR_DATE=\"2025-12-11 12:00:00\" GIT_COMMITTER_DATE=\"2025-12-11 12:00:00\" git commit:*)",
+      "Bash(git push:*)"
     ],
     "deny": [],
     "ask": []

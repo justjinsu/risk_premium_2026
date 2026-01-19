@@ -1,5 +1,7 @@
 """
 Class-based orchestration for CRP runs using CSV inputs and CSV/plot outputs.
+
+Updated to support new class-based risk models (src.models).
 """
 from __future__ import annotations
 
@@ -26,6 +28,15 @@ from src.financials import compute_cashflows_timeseries, calculate_metrics, Cash
 from src.scenarios.korea_power_plan import load_korea_power_plan_scenarios
 from src.risk.physical import get_physical_risk_scenario
 from src.climada.hazards import load_climada_hazards, CLIMADAHazardData
+
+# New class-based models (optional import for backward compatibility)
+try:
+    from src.models import ClimateRiskAPI, CombinedRiskResult
+    NEW_MODELS_AVAILABLE = True
+except ImportError:
+    NEW_MODELS_AVAILABLE = False
+    ClimateRiskAPI = None
+    CombinedRiskResult = None
 
 
 @dataclass
@@ -351,5 +362,155 @@ class CRPModelRunner:
             rating_path = output_dir / "credit_ratings.csv"
             rating_df.to_csv(rating_path, index=False)
             paths["credit_ratings"] = rating_path
+
+        return paths
+
+    # =========================================================================
+    # NEW CLASS-BASED API METHODS
+    # =========================================================================
+
+    def run_with_new_models(
+        self,
+        climate_scenario: str = "RCP8.5",
+        carbon_scenario: str = "korea_ets_current",
+        policy_scenario: str = "korea_10th_plan",
+        damage_functions: Dict[str, str] = None,
+        years: List[int] = None,
+    ) -> Dict[str, Any]:
+        """
+        Run analysis using new class-based models.
+
+        This method uses the new ClimateRiskAPI for cleaner scenario selection.
+
+        Args:
+            climate_scenario: Climate scenario (RCP or SSP)
+            carbon_scenario: Carbon pricing scenario
+            policy_scenario: Policy phase-out scenario
+            damage_functions: Dict mapping hazard type to function name
+            years: List of years to analyze
+
+        Returns:
+            Dict with results and summary table
+        """
+        if not NEW_MODELS_AVAILABLE:
+            raise ImportError("New models not available. Check src.models imports.")
+
+        if years is None:
+            years = [2024, 2030, 2050]
+
+        # Initialize API
+        api = ClimateRiskAPI()
+
+        # Configure
+        api.configure(
+            climate_scenario=climate_scenario,
+            carbon_scenario=carbon_scenario,
+            policy_scenario=policy_scenario,
+            damage_functions=damage_functions or {},
+        )
+
+        # Calculate for each year
+        results = {}
+        for year in years:
+            plant_params = self._get_plant_params()
+            result = api.calculate(
+                year=year,
+                emissions_rate=plant_params.get('emissions_tCO2_per_mwh', 0.85),
+                baseline_cf=plant_params.get('capacity_factor', 0.85),
+            )
+            results[year] = result
+
+        # Get summary table
+        summary = api.get_summary_table(years)
+
+        return {
+            "results": results,
+            "summary": summary,
+            "configuration": {
+                "climate_scenario": climate_scenario,
+                "carbon_scenario": carbon_scenario,
+                "policy_scenario": policy_scenario,
+                "damage_functions": damage_functions,
+            },
+        }
+
+    def list_available_options(self) -> Dict[str, Any]:
+        """
+        List all available scenarios and damage functions.
+
+        Uses new class-based API.
+        """
+        if not NEW_MODELS_AVAILABLE:
+            return {"error": "New models not available"}
+
+        api = ClimateRiskAPI()
+        return api.list_available()
+
+    def export_new_model_results(
+        self,
+        results: Dict[str, Any],
+        output_dir: Path,
+    ) -> Dict[str, Path]:
+        """
+        Export results from new model API to CSV.
+
+        Args:
+            results: Output from run_with_new_models()
+            output_dir: Output directory
+
+        Returns:
+            Dict of output paths
+        """
+        output_dir = Path(output_dir)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        paths = {}
+
+        # Export summary table
+        summary = results.get("summary", {})
+        if summary:
+            rows = []
+            years = sorted(set().union(*[set(v.keys()) for v in summary.values()]))
+            for year in years:
+                row = {"year": year}
+                for metric, values in summary.items():
+                    row[metric] = values.get(year, 0)
+                rows.append(row)
+
+            df = pd.DataFrame(rows)
+            path = output_dir / "new_model_summary.csv"
+            df.to_csv(path, index=False)
+            paths["summary"] = path
+
+        # Export detailed results
+        year_results = results.get("results", {})
+        if year_results:
+            rows = []
+            for year, result in year_results.items():
+                row = {
+                    "year": year,
+                    "total_risk_premium_bps": result.total_risk_premium,
+                    "transition_value": result.transition_result.value,
+                    "physical_value": result.physical_result.value,
+                }
+                # Add components
+                for k, v in result.transition_result.components.items():
+                    row[f"transition_{k}"] = v
+                for k, v in result.physical_result.components.items():
+                    row[f"physical_{k}"] = v
+                rows.append(row)
+
+            df = pd.DataFrame(rows)
+            path = output_dir / "new_model_detailed.csv"
+            df.to_csv(path, index=False)
+            paths["detailed"] = path
+
+        # Export configuration
+        config = results.get("configuration", {})
+        if config:
+            config_df = pd.DataFrame([config])
+            path = output_dir / "new_model_config.csv"
+            config_df.to_csv(path, index=False)
+            paths["config"] = path
 
         return paths

@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document summarizes the verification of climate projection factors used in the physical risk model for Samcheok Blue Power Plant. All values have been traced to peer-reviewed sources as of December 2024.
+This document summarizes the verification of climate projection factors used in the physical risk model for Samcheok Blue Power Plant. All values have been traced to peer-reviewed sources.
 
 ---
 
@@ -182,5 +182,3 @@ When using these climate factors, cite:
 ```
 
 ---
-
-*Verified: December 28, 2024*

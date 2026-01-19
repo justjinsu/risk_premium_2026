@@ -2,7 +2,7 @@
 
 ## Summary of Verified Climate Projection Multipliers
 
-Based on systematic literature search conducted December 28, 2024.
+Based on systematic literature search.
 
 ---
 
@@ -142,5 +142,4 @@ Based on systematic literature search conducted December 28, 2024.
 
 ---
 
-*Compiled: December 28, 2024*
 *All DOIs verified via CrossRef*

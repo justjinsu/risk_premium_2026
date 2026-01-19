@@ -1,6 +1,5 @@
 # Final Source Verification - Physical Risk Module
 
-**Verification Date:** December 29, 2024
 **Status:** ALL SOURCES VERIFIED
 
 ---
@@ -131,5 +130,3 @@
 | `src/climada/climada_climate_projections.py` | CURRENT |
 
 ---
-
-*Verification completed: December 29, 2024*

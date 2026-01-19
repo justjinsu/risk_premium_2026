@@ -2,7 +2,7 @@
 Credit rating assessment based on KIS (Korea Investors Service) methodology.
 Implements quantitative mapping grid for Private Power Generation (IPP) industry.
 
-ENHANCED (2024-12): Extended to handle negative EBITDA and distressed scenarios.
+ENHANCED: Extended to handle negative EBITDA and distressed scenarios.
 Adds sub-investment grade ratings (CCC, CC, C, D) and DSCR-based coverage analysis.
 
 Reference:

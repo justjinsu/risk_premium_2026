@@ -423,5 +423,4 @@ All equations are implemented in:
 
 ---
 
-*Document created: December 2024*
 *Part of: Physical Risk Module Review - Step 9*

@@ -208,5 +208,4 @@ These values could not be confirmed from paper abstracts/access.
 
 ---
 
-*Model finalized: December 29, 2024*
 *All values verified against original sources*

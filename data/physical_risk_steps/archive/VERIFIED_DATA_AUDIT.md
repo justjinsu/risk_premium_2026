@@ -196,5 +196,4 @@ Use CLIMADA as lower bound, literature as upper bound:
 
 ---
 
-*This audit completed: December 29, 2024*
 *All claims verified against original sources or marked as unverified*
