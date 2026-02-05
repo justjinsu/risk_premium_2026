@@ -10,9 +10,12 @@ Note: Carbon pricing has been archived. This model focuses on dispatch and physi
 """
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Dict, Any, List, Optional, TYPE_CHECKING
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 from src.risk import TransitionAdjustments, PhysicalAdjustments
 from src.scenarios import TransitionScenario, MarketScenario
@@ -20,6 +23,7 @@ import numpy_financial as npf
 
 if TYPE_CHECKING:
     from src.risk.physical import YearlyPhysicalAdjustments
+    from src.risk.transition import YearlyTransitionAdjustments
 
 
 @dataclass
@@ -30,7 +34,7 @@ class CashFlowTimeSeries:
     fuel_costs: np.ndarray
     variable_opex: np.ndarray
     fixed_opex: np.ndarray
-    outage_costs: np.ndarray
+    lost_revenue_from_outages: np.ndarray
     total_costs: np.ndarray
     ebitda: np.ndarray
     depreciation: np.ndarray
@@ -41,6 +45,11 @@ class CashFlowTimeSeries:
     capex: np.ndarray
     free_cash_flow: np.ndarray
     capacity_factor: np.ndarray
+    carbon_costs: np.ndarray = None  # K-ETS carbon costs ($)
+
+    def __post_init__(self):
+        if self.carbon_costs is None:
+            self.carbon_costs = np.zeros_like(self.years, dtype=float)
 
     def to_dict(self) -> Dict[str, List[float]]:
         """Convert to dict for CSV export."""
@@ -50,7 +59,7 @@ class CashFlowTimeSeries:
             "fuel_costs": self.fuel_costs.tolist(),
             "variable_opex": self.variable_opex.tolist(),
             "fixed_opex": self.fixed_opex.tolist(),
-            "outage_costs": self.outage_costs.tolist(),
+            "lost_revenue_from_outages": self.lost_revenue_from_outages.tolist(),
             "total_costs": self.total_costs.tolist(),
             "ebitda": self.ebitda.tolist(),
             "depreciation": self.depreciation.tolist(),
@@ -61,6 +70,7 @@ class CashFlowTimeSeries:
             "capex": self.capex.tolist(),
             "free_cash_flow": self.free_cash_flow.tolist(),
             "capacity_factor": self.capacity_factor.tolist(),
+            "carbon_costs": self.carbon_costs.tolist(),
         }
 
 
@@ -72,6 +82,7 @@ def compute_cashflows_timeseries(
     market_scenario: MarketScenario | None = None,
     start_year: int = 2025,
     yearly_physical_adj: Optional['YearlyPhysicalAdjustments'] = None,
+    yearly_transition_adj: Optional['YearlyTransitionAdjustments'] = None,
 ) -> CashFlowTimeSeries:
     """
     Compute annual cash flows over the plant's operating life.
@@ -97,12 +108,12 @@ def compute_cashflows_timeseries(
     price = float(plant_params["power_price_per_mwh"])
     heat_rate = float(plant_params["heat_rate_mmbtu_mwh"])
     fuel_price = float(plant_params["fuel_price_per_mmbtu"])
-    fixed_opex_per_kw = float(plant_params["fixed_opex_per_kw_year"])
+    fixed_opex_per_kw = float(plant_params.get("fixed_opex_per_kw_year", plant_params.get("fixed_opex_per_kw", 35.0)))
     variable_opex_per_mwh = float(plant_params["variable_opex_per_mwh"])
 
     # Financial params for concretization
     total_capex = float(plant_params["total_capex_million"]) * 1e6
-    useful_life = int(plant_params["useful_life"])
+    useful_life = int(plant_params.get("useful_life", plant_params.get("operating_years", 40)))
     tax_rate = float(plant_params["tax_rate"])
     debt_fraction = float(plant_params["debt_fraction"])
     debt_interest = float(plant_params["debt_interest_rate"])
@@ -139,14 +150,19 @@ def compute_cashflows_timeseries(
         water_constraints = np.full(n_years, getattr(physical_adj, "water_constrained_capacity", 1.0))
 
     # === CAPACITY FACTOR CALCULATION ===
-    base_cf = transition_adj.capacity_factor
+    if yearly_transition_adj is not None:
+        # Year-by-year CF from enhanced transition trajectory
+        base_cf_series = np.array([
+            yearly_transition_adj.get_cf_for_year(int(y)) for y in years
+        ])
+    else:
+        base_cf = transition_adj.capacity_factor
+        base_cf_series = np.full(n_years, base_cf)
 
     # Apply Market Demand factor if market scenario exists
     if market_scenario:
         demand_factors = np.array([market_scenario.get_demand_factor(year, start_year) for year in years])
-        base_cf_series = np.minimum(1.0, base_cf * demand_factors)
-    else:
-        base_cf_series = np.full(n_years, base_cf)
+        base_cf_series = np.minimum(1.0, base_cf_series * demand_factors)
 
     # Apply capacity derates (year-by-year)
     cf_series = base_cf_series * (1 - capacity_derates)
@@ -182,19 +198,35 @@ def compute_cashflows_timeseries(
     # Fixed O&M: constant regardless of generation
     fixed_opex = np.full(n_years, capacity_mw * 1000 * fixed_opex_per_kw)
 
+    # Carbon costs (K-ETS)
+    if yearly_transition_adj is not None:
+        carbon_cost_per_mwh = np.array([
+            yearly_transition_adj.get_carbon_cost_per_mwh_for_year(int(y)) for y in years
+        ])
+        carbon_costs = actual_mwh * carbon_cost_per_mwh
+    else:
+        carbon_costs = np.zeros(n_years)
+
     # Outage costs: Now represents LOST REVENUE (for reporting), not an actual cash cost
     # This is the revenue we would have earned but didn't due to outages
     # We track this separately for transparency, but it's already reflected in reduced revenue
-    outage_costs = potential_mwh * outage_rates * prices  # Lost revenue from outages
+    lost_revenue_from_outages = potential_mwh * outage_rates * prices  # Lost revenue from outages
 
-    total_costs = fuel_costs + variable_opex + fixed_opex
-    # Note: outage_costs NOT included in total_costs - it's informational only
+    total_costs = fuel_costs + variable_opex + fixed_opex + carbon_costs
+    # Note: lost_revenue_from_outages NOT included in total_costs - it's informational only
 
     # --- Financial Calculations ---
 
     # 1. EBITDA Calculation
     # EBITDA = Revenue - Total Costs (Fuel + O&M)
     ebitda = revenue - total_costs
+
+    negative_years = years[ebitda < 0]
+    if len(negative_years) > 0:
+        logger.warning(
+            f"Negative EBITDA detected in {len(negative_years)} year(s): "
+            f"{negative_years.tolist()}"
+        )
 
     # 2. Depreciation (Non-cash expense)
     # Straight-line depreciation over useful life
@@ -261,7 +293,7 @@ def compute_cashflows_timeseries(
         fuel_costs=fuel_costs,
         variable_opex=variable_opex,
         fixed_opex=fixed_opex,
-        outage_costs=outage_costs,
+        lost_revenue_from_outages=lost_revenue_from_outages,
         total_costs=total_costs,
         ebitda=ebitda,
         depreciation=depreciation,
@@ -272,6 +304,7 @@ def compute_cashflows_timeseries(
         capex=capex,
         free_cash_flow=fcf,
         capacity_factor=cf_series,
+        carbon_costs=carbon_costs,
     )
 
 

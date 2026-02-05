@@ -46,7 +46,7 @@ def plot_spreads(spread_table: pd.DataFrame):
 def plot_cashflow_waterfall(cashflow_df: pd.DataFrame, scenario_name: str = ""):
     """
     Waterfall chart showing revenue breakdown to EBITDA.
-    Expects columns: revenue, fuel_costs, variable_opex, fixed_opex, carbon_costs, outage_costs, ebitda
+    Expects columns: revenue, fuel_costs, variable_opex, fixed_opex, carbon_costs, lost_revenue_from_outages, ebitda
     """
     # Use first year or average
     if len(cashflow_df) > 0:
@@ -59,7 +59,7 @@ def plot_cashflow_waterfall(cashflow_df: pd.DataFrame, scenario_name: str = ""):
     var_opex = -row.get("variable_opex", 0) / 1e6
     fixed = -row.get("fixed_opex", 0) / 1e6
     carbon = -row.get("carbon_costs", 0) / 1e6
-    outage = -row.get("outage_costs", 0) / 1e6
+    outage = -row.get("lost_revenue_from_outages", 0) / 1e6
     ebitda = row.get("ebitda", 0) / 1e6
 
     fig = go.Figure(go.Waterfall(

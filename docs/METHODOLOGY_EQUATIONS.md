@@ -423,4 +423,8 @@ All equations are implemented in:
 
 ---
 
+<<<<<<< HEAD
+=======
+*Document created: December 2024*
+>>>>>>> 7b1507166a09149c835e7a055a114db44cb2809e
 *Part of: Physical Risk Module Review - Step 9*

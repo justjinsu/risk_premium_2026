@@ -1,5 +1,10 @@
 # Samcheok Blue Power Plant: Physical Risk Model
 
+<<<<<<< HEAD
+=======
+**Version**: 1.1 (Revised after peer review)
+**Date**: December 29, 2024
+>>>>>>> 7b1507166a09149c835e7a055a114db44cb2809e
 **Location**: Samcheok, South Korea (37.4404°N, 129.1671°E)
 **Plant**: 2.1 GW Coal-fired Thermal Power Plant
 
@@ -339,4 +344,17 @@ python -m src.climada.climada_physical_risk_model
 
 ---
 
+<<<<<<< HEAD
 *Archived files available in: `./archive/`*
+=======
+## Document History
+
+| Version | Date | Changes |
+|---------|------|---------|
+| 1.0 | 2024-12-29 | Initial release |
+| 1.1 | 2024-12-29 | Peer review revisions: Added verification status labels; Documented all assumptions explicitly; Clarified derived vs. verified values; Removed unsupported claims |
+
+---
+
+*Archived files available in: `./archive_2024_12_29/`*
+>>>>>>> 7b1507166a09149c835e7a055a114db44cb2809e

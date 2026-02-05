@@ -274,7 +274,12 @@ class PhysicalRiskModel(BaseRiskModel):
                 compound_data = self._compound_model.get_total_compound_adjustment(year, self._rcp)
                 # Compound adjustment is the additional risk from correlated events
                 compound_adjustment = compound_data["compound_adjustment_factor"] * (acute_total + chronic_total)
-            except Exception:
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).warning(
+                    f"Compound risk calculation failed for year={year}, rcp={self._rcp}: {e}. "
+                    f"Using compound_adjustment=0.0"
+                )
                 compound_adjustment = 0.0
 
         total_risk = acute_total + chronic_total + compound_adjustment

@@ -10,6 +10,7 @@ Run:
     python -m src.climada.climada_physical_risk_model
 
 Version: 2.0 (CSV-based pipeline)
+Date: December 29, 2024
 """
 
 from .climada_physical_risk_model import (
@@ -31,6 +32,15 @@ from .climada_physical_risk_model import (
     SAMCHEOK_LON,
 )
 
+# Re-export from archive/hazards.py for backwards compatibility
+from .archive.hazards import (
+    load_climada_hazards,
+    CLIMADAHazardData,
+    calculate_compound_risk,
+    interpolate_hazard_by_year,
+    calculate_economic_impact,
+)
+
 __all__ = [
     'run_full_analysis',
     'calculate_physical_risk',
@@ -44,4 +54,10 @@ __all__ = [
     'TemperatureResult',
     'SAMCHEOK_LAT',
     'SAMCHEOK_LON',
+    # From archive/hazards.py
+    'load_climada_hazards',
+    'CLIMADAHazardData',
+    'calculate_compound_risk',
+    'interpolate_hazard_by_year',
+    'calculate_economic_impact',
 ]

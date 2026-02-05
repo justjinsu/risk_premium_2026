@@ -24,10 +24,19 @@ from src.risk.credit_rating import (
     Rating
 )
 from src.risk.financing import calculate_financing_with_counterfactual
+from src.risk.attribution import decompose_risk_shapley
 from src.financials import compute_cashflows_timeseries, calculate_metrics, CashFlowTimeSeries, FinancialMetrics
 from src.scenarios.korea_power_plan import load_korea_power_plan_scenarios
-from src.risk.physical import get_physical_risk_scenario
+from src.risk.physical import get_physical_risk_scenario, PhysicalAdjustments
 from src.climada.hazards import load_climada_hazards, CLIMADAHazardData
+
+# Conditional import for enhanced 11th Basic Plan
+try:
+    from src.scenarios.enhanced_korea_power_plan import create_enhanced_11th_plan
+    ENHANCED_PLAN_AVAILABLE = True
+except ImportError:
+    ENHANCED_PLAN_AVAILABLE = False
+    create_enhanced_11th_plan = None
 
 # New class-based models (optional import for backward compatibility)
 try:
@@ -40,6 +49,40 @@ except ImportError:
 
 
 @dataclass
+class RiskComponentResult:
+    """Independent result for a single risk factor."""
+    risk_type: str  # "baseline" | "transition_only" | "physical_only" | "combined"
+    cashflow: CashFlowTimeSeries
+    metrics: FinancialMetrics
+    credit_rating: RatingAssessment | None
+    crp_bps: float
+    adjustments: Dict[str, Any]
+
+
+@dataclass
+class RiskAttribution:
+    """Shapley-value risk attribution decomposition."""
+    baseline_crp_bps: float
+    transition_only_crp_bps: float
+    physical_only_crp_bps: float
+    combined_crp_bps: float
+    transition_contribution_bps: float
+    physical_contribution_bps: float
+    interaction_effect_bps: float
+
+    def to_dict(self) -> Dict[str, float]:
+        return {
+            "baseline_crp_bps": self.baseline_crp_bps,
+            "transition_only_crp_bps": self.transition_only_crp_bps,
+            "physical_only_crp_bps": self.physical_only_crp_bps,
+            "combined_crp_bps": self.combined_crp_bps,
+            "transition_contribution_bps": self.transition_contribution_bps,
+            "physical_contribution_bps": self.physical_contribution_bps,
+            "interaction_effect_bps": self.interaction_effect_bps,
+        }
+
+
+@dataclass
 class ScenarioResult:
     """Results for a single scenario."""
     scenario_name: str
@@ -48,6 +91,8 @@ class ScenarioResult:
     financing: FinancingImpact | None = None  # Only for risk scenarios
     credit_rating: RatingAssessment | None = None  # Credit rating assessment
     counterfactual_crp: Dict[str, Any] | None = None  # Counterfactual-based CRP analysis
+    risk_components: Dict[str, RiskComponentResult] | None = None
+    risk_attribution: RiskAttribution | None = None
 
 
 class CRPModelRunner:
@@ -59,17 +104,38 @@ class CRPModelRunner:
         self.base_dir = Path(base_dir)
         self.dataset = load_inputs(self.base_dir)
         self.power_plans = load_korea_power_plan_scenarios(self.base_dir / "data/raw/korea_power_plan.csv")
-        self.climada_hazards = load_climada_hazards(self.base_dir / "data/raw/climada_hazards.csv")
+        # Use literature_hazards.csv (has correct schema), fall back to climada_hazards.csv
+        hazards_path = self.base_dir / "data/raw/literature_hazards.csv"
+        if not hazards_path.exists():
+            hazards_path = self.base_dir / "data/raw/climada_hazards.csv"
+        if hazards_path.exists():
+            self.climada_hazards = load_climada_hazards(hazards_path)
+        else:
+            self.climada_hazards = {}
 
     def _get_plant_params(self) -> Dict[str, Any]:
         """Extract plant parameters as a flat dict."""
-        return {k: get_param_value(self.dataset.plant_params, k) for k in self.dataset.plant_params.keys()}
+        # dataset is a dict from load_all(): {'plant': PlantParameters, 'financing': ..., etc.}
+        plant = self.dataset.get('plant') if isinstance(self.dataset, dict) else self.dataset.plant_params
+        if hasattr(plant, 'to_dict'):
+            return plant.to_dict()
+        elif hasattr(plant, '__dict__'):
+            return {k: v for k, v in plant.__dict__.items() if not k.startswith('_')}
+        elif isinstance(plant, dict):
+            return plant
+        return {}
 
     def _get_financing_params(self) -> Dict[str, Any]:
         """Extract financing parameters."""
-        params = {}
-        for k in self.dataset.financing_params.keys():
-            params[k] = get_param_value(self.dataset.financing_params, k)
+        financing = self.dataset.get('financing') if isinstance(self.dataset, dict) else self.dataset.financing_params
+        if hasattr(financing, 'to_dict'):
+            params = financing.to_dict()
+        elif hasattr(financing, '__dict__'):
+            params = {k: v for k, v in financing.__dict__.items() if not k.startswith('_')}
+        elif isinstance(financing, dict):
+            params = dict(financing)
+        else:
+            params = {}
         # Also add plant finance params
         plant_params = self._get_plant_params()
         params['debt_fraction'] = plant_params.get('debt_fraction', 0.70)
@@ -80,17 +146,25 @@ class CRPModelRunner:
         """
         Load transition scenario from CSV.
         """
-        row = self.dataset.policy_scenarios.get(scenario_name)
-        if not row:
-            raise ValueError(f"Transition scenario '{scenario_name}' not found")
+        policy_scenarios = self.dataset.get('transition') if isinstance(self.dataset, dict) else self.dataset.policy_scenarios
+        scenario_obj = policy_scenarios.get(scenario_name) if policy_scenarios else None
 
-        scenario = TransitionScenario(
+        # If we got a TransitionScenario object directly (from new data_loader), use it
+        if scenario_obj is not None:
+            # Data loader's TransitionScenario has dispatch_penalty, but src/scenarios uses dispatch_priority_penalty
+            # Return a compatible scenario object
+            return TransitionScenario(
+                name=scenario_name,
+                dispatch_priority_penalty=getattr(scenario_obj, 'dispatch_penalty', 0.0),
+                retirement_years=getattr(scenario_obj, 'retirement_years', 40),
+            )
+
+        # Return default baseline scenario
+        return TransitionScenario(
             name=scenario_name,
-            dispatch_priority_penalty=float(row.get('dispatch_penalty', 0)),
-            retirement_years=int(float(row.get('retirement_years', 40))),
+            dispatch_priority_penalty=0.0,
+            retirement_years=40,
         )
-
-        return scenario
 
     def _load_physical_scenario(self, scenario_name: str) -> PhysicalScenario | CLIMADAHazardData:
         """Load physical scenario from CSV or CLIMADA data."""
@@ -113,7 +187,8 @@ class CRPModelRunner:
         if scenario_name.lower() in ["low", "medium", "high", "extreme"]:
             return get_physical_risk_scenario(scenario_name)
 
-        row = self.dataset.physical_risks.get(scenario_name)
+        physical_risks = self.dataset.get('physical') if isinstance(self.dataset, dict) else self.dataset.physical_risks
+        row = physical_risks.get(scenario_name) if physical_risks else None
         if not row:
             # Fallback to baseline if not found
             return get_physical_risk_scenario("Low")
@@ -135,6 +210,75 @@ class CRPModelRunner:
         else:
             return MarketScenario(name="baseline", demand_growth_pct=1.0, price_sensitivity=0.5)
 
+    def _compute_component(
+        self,
+        plant_params: Dict[str, Any],
+        transition_scenario: TransitionScenario,
+        transition_adj: TransitionAdjustments,
+        physical_adj: PhysicalAdjustments,
+        market_scenario: MarketScenario | None,
+        risk_type: str,
+        yearly_transition_adj=None,
+    ) -> RiskComponentResult:
+        """Run cashflow → metrics → rating → CRP for a single risk configuration."""
+        cashflow = compute_cashflows_timeseries(
+            plant_params,
+            transition_scenario,
+            transition_adj,
+            physical_adj,
+            market_scenario,
+            yearly_transition_adj=yearly_transition_adj,
+        )
+        metrics = calculate_metrics(cashflow, plant_params)
+
+        avg_ebitda = float(cashflow.ebitda.mean())
+        capacity_mw = plant_params.get('capacity_mw', 2000)
+        total_capex = plant_params.get('total_capex_million', 3200) * 1e6
+        debt_fraction = plant_params.get('debt_fraction', 0.70)
+        equity_fraction = plant_params.get('equity_fraction', 0.30)
+        debt_interest = plant_params.get('debt_interest_rate', 0.05)
+
+        fixed_assets = total_capex
+        total_debt = total_capex * debt_fraction
+        total_equity = total_capex * equity_fraction
+        total_assets = total_capex
+        interest_expense = total_debt * debt_interest
+        cash_and_equivalents = avg_ebitda * 0.1
+
+        rating_metrics = calculate_rating_metrics_from_financials(
+            capacity_mw=capacity_mw,
+            ebitda=avg_ebitda,
+            fixed_assets=fixed_assets,
+            interest_expense=interest_expense,
+            total_debt=total_debt,
+            cash_and_equivalents=cash_and_equivalents,
+            total_equity=total_equity,
+            total_assets=total_assets,
+            dscr=metrics.avg_dscr,
+        )
+
+        credit_rating = assess_credit_rating(rating_metrics)
+        counterfactual_result = assess_rating_with_counterfactual(rating_metrics)
+        crp_bps = float(counterfactual_result.get("crp_bps", 0.0))
+
+        adjustments = {
+            "transition_cf": transition_adj.capacity_factor,
+            "transition_years": transition_adj.operating_years,
+            "physical_outage": physical_adj.outage_rate,
+            "physical_derate": physical_adj.capacity_derate,
+            "physical_efficiency_loss": physical_adj.efficiency_loss,
+            "physical_water": physical_adj.water_constrained_capacity,
+        }
+
+        return RiskComponentResult(
+            risk_type=risk_type,
+            cashflow=cashflow,
+            metrics=metrics,
+            credit_rating=credit_rating,
+            crp_bps=crp_bps,
+            adjustments=adjustments,
+        )
+
     def run_scenario(
         self,
         scenario_name: str,
@@ -142,8 +286,17 @@ class CRPModelRunner:
         physical_scenario_name: str = "baseline",
         market_scenario_name: str = "baseline",
         power_plan_name: str | None = None,
+        use_enhanced_korea_plan: bool = False,
+        current_year: int | None = None,
+        decompose: bool = False,
     ) -> ScenarioResult:
-        """Run a single scenario."""
+        """Run a single scenario.
+
+        Args:
+            decompose: If True, run 4 independent cashflow calculations
+                (baseline, transition-only, physical-only, combined) and
+                produce a Shapley-value risk attribution.
+        """
         plant_params = self._get_plant_params()
 
         transition_scenario = self._load_transition_scenario(transition_scenario_name)
@@ -155,74 +308,143 @@ class CRPModelRunner:
         if power_plan_name and power_plan_name in self.power_plans:
             korea_plan = self.power_plans[power_plan_name]
 
+        # Load Enhanced 11th Basic Plan if requested
+        enhanced_korea_scenario = None
+        if use_enhanced_korea_plan and ENHANCED_PLAN_AVAILABLE:
+            enhanced_korea_scenario = create_enhanced_11th_plan()
+
         transition_adj = apply_transition(
             plant_params,
             transition_scenario,
-            korea_plan_scenario=korea_plan
+            korea_plan_scenario=korea_plan,
+            enhanced_korea_scenario=enhanced_korea_scenario,
+            current_year=current_year,
         )
 
-        # Handle CLIMADA vs Standard Physical Scenario
+        # Build yearly transition adjustments if enhanced plan available
+        yearly_transition_adj = None
+        if enhanced_korea_scenario is not None:
+            from src.risk.transition import create_yearly_transition_adjustments
+            start = int(plant_params.get("cod_year", 2025))
+            yearly_transition_adj = create_yearly_transition_adjustments(
+                plant_params, enhanced_korea_scenario,
+                start_year=start,
+                end_year=start + transition_adj.operating_years - 1,
+            )
+
+        # Handle physical scenario using new apply_physical(plant_params, scenario_name, year)
+        # The new API uses scenario_name string instead of PhysicalScenario objects
         if isinstance(physical_data, CLIMADAHazardData):
-            # Create a dummy base scenario for the signature, but pass climada_hazard
-            dummy_scenario = PhysicalScenario("CLIMADA", 0, 0, 0)
-            physical_adj = apply_physical(plant_params, dummy_scenario, climada_hazard=physical_data)
+            # CLIMADA data: use the scenario name from climada_hazards
+            # Create PhysicalAdjustments directly from CLIMADAHazardData
+            physical_adj = PhysicalAdjustments(
+                outage_rate=physical_data.wildfire_outage_rate + physical_data.flood_outage_rate,
+                capacity_derate=physical_data.slr_capacity_derate,
+                efficiency_loss=0.0,
+                water_constrained_capacity=1.0,
+                notes=f"CLIMADA: {physical_data.data_source}",
+            )
+        elif hasattr(physical_data, 'name'):
+            # PhysicalScenario object from data_loader - use the name
+            physical_adj = apply_physical(plant_params, physical_data.name, current_year or 2024)
         else:
-            physical_adj = apply_physical(plant_params, physical_data)
+            # String scenario name
+            physical_adj = apply_physical(plant_params, str(physical_scenario_name), current_year or 2024)
 
-        cashflow = compute_cashflows_timeseries(
-            plant_params,
-            transition_scenario,
-            transition_adj,
-            physical_adj,
-            market_scenario,
+        # --- Combined run (always performed, same as before) ---
+        combined = self._compute_component(
+            plant_params, transition_scenario, transition_adj, physical_adj,
+            market_scenario, "combined",
+            yearly_transition_adj=yearly_transition_adj,
         )
 
-        metrics = calculate_metrics(cashflow, plant_params)
-
-        # Calculate credit rating based on average annual performance
-        avg_ebitda = float(cashflow.ebitda.mean())
-        capacity_mw = plant_params.get('capacity_mw', 2000)
-        total_capex = plant_params.get('total_capex_million', 3200) * 1e6
-        debt_fraction = plant_params.get('debt_fraction', 0.70)
-        equity_fraction = plant_params.get('equity_fraction', 0.30)
-        debt_interest = plant_params.get('debt_interest_rate', 0.05)
-
-        # Estimate balance sheet items
-        fixed_assets = total_capex  # Simplified: assume fixed assets = capex
-        total_debt = total_capex * debt_fraction
-        total_equity = total_capex * equity_fraction
-        total_assets = total_capex
-        interest_expense = total_debt * debt_interest
-        cash_and_equivalents = avg_ebitda * 0.1  # Assume 10% of EBITDA in cash
-
-        rating_metrics = calculate_rating_metrics_from_financials(
-            capacity_mw=capacity_mw,
-            ebitda=avg_ebitda,
-            fixed_assets=fixed_assets,
-            interest_expense=interest_expense,
-            total_debt=total_debt,
-            cash_and_equivalents=cash_and_equivalents,
-            total_equity=total_equity,
-            total_assets=total_assets,
-            dscr=metrics.avg_dscr,  # Use DSCR from financial metrics
-        )
-
-        credit_rating = assess_credit_rating(rating_metrics)
-
-        # Calculate counterfactual-based CRP
-        counterfactual_result = assess_rating_with_counterfactual(rating_metrics)
-
-        return ScenarioResult(
+        # Build the primary ScenarioResult from the combined run
+        result = ScenarioResult(
             scenario_name=scenario_name,
-            cashflow=cashflow,
-            metrics=metrics,
-            credit_rating=credit_rating,
-            counterfactual_crp=counterfactual_result,
+            cashflow=combined.cashflow,
+            metrics=combined.metrics,
+            credit_rating=combined.credit_rating,
+            counterfactual_crp=assess_rating_with_counterfactual(
+                calculate_rating_metrics_from_financials(
+                    capacity_mw=plant_params.get('capacity_mw', 2000),
+                    ebitda=float(combined.cashflow.ebitda.mean()),
+                    fixed_assets=plant_params.get('total_capex_million', 3200) * 1e6,
+                    interest_expense=(plant_params.get('total_capex_million', 3200) * 1e6
+                                      * plant_params.get('debt_fraction', 0.70)
+                                      * plant_params.get('debt_interest_rate', 0.05)),
+                    total_debt=(plant_params.get('total_capex_million', 3200) * 1e6
+                                * plant_params.get('debt_fraction', 0.70)),
+                    cash_and_equivalents=float(combined.cashflow.ebitda.mean()) * 0.1,
+                    total_equity=(plant_params.get('total_capex_million', 3200) * 1e6
+                                  * plant_params.get('equity_fraction', 0.30)),
+                    total_assets=plant_params.get('total_capex_million', 3200) * 1e6,
+                    dscr=combined.metrics.avg_dscr,
+                )
+            ),
         )
+
+        if not decompose:
+            return result
+
+        # --- Decomposition: 3 additional runs ---
+
+        # No-risk adjustments
+        no_transition = TransitionAdjustments(
+            capacity_factor=float(plant_params.get("capacity_factor", 0.85)),
+            operating_years=int(plant_params.get("operating_years", 40)),
+            notes="No transition risk (baseline)",
+        )
+        no_physical = PhysicalAdjustments(
+            outage_rate=0.0,
+            capacity_derate=0.0,
+            efficiency_loss=0.0,
+            water_constrained_capacity=1.0,
+            notes="No physical risk (baseline)",
+        )
+
+        baseline = self._compute_component(
+            plant_params, transition_scenario, no_transition, no_physical,
+            market_scenario, "baseline",
+        )
+        transition_only = self._compute_component(
+            plant_params, transition_scenario, transition_adj, no_physical,
+            market_scenario, "transition_only",
+        )
+        physical_only = self._compute_component(
+            plant_params, transition_scenario, no_transition, physical_adj,
+            market_scenario, "physical_only",
+        )
+
+        # Shapley decomposition
+        shapley = decompose_risk_shapley(
+            baseline_crp=baseline.crp_bps,
+            transition_only_crp=transition_only.crp_bps,
+            physical_only_crp=physical_only.crp_bps,
+            combined_crp=combined.crp_bps,
+        )
+
+        result.risk_components = {
+            "baseline": baseline,
+            "transition_only": transition_only,
+            "physical_only": physical_only,
+            "combined": combined,
+        }
+        result.risk_attribution = RiskAttribution(
+            baseline_crp_bps=baseline.crp_bps,
+            transition_only_crp_bps=transition_only.crp_bps,
+            physical_only_crp_bps=physical_only.crp_bps,
+            combined_crp_bps=combined.crp_bps,
+            transition_contribution_bps=shapley["transition_contribution_bps"],
+            physical_contribution_bps=shapley["physical_contribution_bps"],
+            interaction_effect_bps=shapley["interaction_effect_bps"],
+        )
+
+        return result
 
     def run_multi_scenario(
         self,
         scenarios: List[Dict[str, str]] = None,
+        decompose: bool = False,
     ) -> Dict[str, ScenarioResult]:
         """
         Run multiple scenarios and calculate financing impacts.
@@ -247,6 +469,9 @@ class CRPModelRunner:
                 # Additional scenarios
                 {"name": "low_demand", "transition": "baseline", "physical": "baseline", "market": "low_demand"},
                 {"name": "severe_drought", "transition": "baseline", "physical": "severe_drought", "market": "baseline"},
+                # Enhanced 11th Basic Plan scenarios
+                {"name": "enhanced_11th_plan", "transition": "moderate_transition", "physical": "baseline", "use_enhanced": True},
+                {"name": "enhanced_combined", "transition": "moderate_transition", "physical": "moderate_physical", "use_enhanced": True},
             ]
 
         results = {}
@@ -256,13 +481,16 @@ class CRPModelRunner:
         for scenario_spec in scenarios:
             market_name = scenario_spec.get("market", "baseline")
             power_plan_name = scenario_spec.get("power_plan", None)
+            use_enhanced = scenario_spec.get("use_enhanced", False)
 
             result = self.run_scenario(
                 scenario_spec["name"],
                 scenario_spec["transition"],
-                scenario_spec["physical"],
+                scenario_spec.get("physical", "baseline"),
                 market_name,
                 power_plan_name,
+                use_enhanced_korea_plan=use_enhanced,
+                decompose=decompose,
             )
             results[scenario_spec["name"]] = result
 
@@ -362,6 +590,20 @@ class CRPModelRunner:
             rating_path = output_dir / "credit_ratings.csv"
             rating_df.to_csv(rating_path, index=False)
             paths["credit_ratings"] = rating_path
+
+        # Export risk attribution table (for scenarios that have decomposition)
+        attribution_rows = []
+        for name, result in results.items():
+            if result.risk_attribution is not None:
+                row = {"scenario": name}
+                row.update(result.risk_attribution.to_dict())
+                attribution_rows.append(row)
+
+        if attribution_rows:
+            attr_df = pd.DataFrame(attribution_rows)
+            attr_path = output_dir / "risk_attribution.csv"
+            attr_df.to_csv(attr_path, index=False)
+            paths["risk_attribution"] = attr_path
 
         return paths
 

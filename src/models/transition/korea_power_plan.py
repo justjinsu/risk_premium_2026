@@ -66,8 +66,16 @@ class KoreaPowerPlan(BaseScenario):
         if not years:
             return 1.0
         if year < years[0]:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Year {year} is before trajectory start ({years[0]}), using first value"
+            )
             return self.dispatch_trajectory[years[0]]
         if year > years[-1]:
+            import logging
+            logging.getLogger(__name__).warning(
+                f"Year {year} is beyond trajectory end ({years[-1]}), using last value"
+            )
             return self.dispatch_trajectory[years[-1]]
 
         # Linear interpolation

@@ -90,7 +90,7 @@ def plot_waterfall(results, output_dir):
     fuel = -cf.fuel_costs.sum() / 1e9
     opex = -(cf.variable_opex.sum() + cf.fixed_opex.sum()) / 1e9
     carbon = -cf.carbon_costs.sum() / 1e9
-    outage = -cf.outage_costs.sum() / 1e9 # Physical risk impact
+    outage = -cf.lost_revenue_from_outages.sum() / 1e9 # Physical risk impact
     ebitda = cf.ebitda.sum() / 1e9
     depr = -cf.depreciation.sum() / 1e9
     interest = -cf.interest_expense.sum() / 1e9

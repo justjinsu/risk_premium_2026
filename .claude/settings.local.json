@@ -78,7 +78,22 @@
       "Bash(git reset:*)",
       "Bash(git commit:*)",
       "Bash(GIT_AUTHOR_DATE=\"2025-12-11 12:00:00\" GIT_COMMITTER_DATE=\"2025-12-11 12:00:00\" git commit:*)",
-      "Bash(git push:*)"
+      "Bash(git push:*)",
+      "Bash(npx create-next-app:*)",
+      "Bash(npm install:*)",
+      "Bash(pip3 install pyyaml)",
+      "Bash(pip3 list:*)",
+      "Bash(pip3 show:*)",
+      "Bash(pip3 install:*)",
+      "Bash(brew install:*)",
+      "Bash(npm run build:*)",
+      "Bash(/opt/homebrew/bin/python3.12 -m venv:*)",
+      "Bash(source:*)",
+      "Bash(identify:*)",
+      "Bash(sips -g all:*)",
+      "Bash(sips:*)",
+      "Bash(node:*)",
+      "Bash(timeout 10 npm run dev:*)"
     ],
     "deny": [],
     "ask": []

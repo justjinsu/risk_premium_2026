@@ -190,9 +190,9 @@ class DataLoader:
         return pd.read_csv(path)
     
     def load_physical_scenarios(self) -> Dict[str, PhysicalScenario]:
-        path = self.input_dir / "physical_scenarios.csv"
-        if not path.exists():
-            path = self.input_dir / "literature_hazards.csv"
+        # Prefer literature_hazards.csv (has correct schema: scenario, wildfire_outage_rate, etc.)
+        # physical_scenarios.csv has different schema (scenario_name, hazard_type, parameter, value)
+        path = self.input_dir / "literature_hazards.csv"
         if not path.exists():
             # Legacy fallback
             path = self.input_dir / "climada_hazards.csv"

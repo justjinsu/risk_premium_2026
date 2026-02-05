@@ -467,8 +467,14 @@ def calculate_rating_metrics_from_financials(
             # Use EBITDA as proxy for CFADS (simplified)
             calculated_dscr = ebitda / total_debt_service if ebitda > 0 else ebitda / total_debt_service
     elif interest_expense > 0:
-        # Fallback: estimate debt service as ~1.5x interest (typical for amortizing debt)
-        estimated_debt_service = interest_expense * 1.5
+        # Use proper annuity formula: PMT = P * r(1+r)^n / ((1+r)^n - 1)
+        # Estimate from interest expense: P ≈ interest / rate, typical rate ~5%, tenor ~20yr
+        estimated_rate = 0.05
+        estimated_tenor = 20
+        annuity_factor = (estimated_rate * (1 + estimated_rate) ** estimated_tenor) / \
+                         ((1 + estimated_rate) ** estimated_tenor - 1)
+        estimated_principal = interest_expense / estimated_rate
+        estimated_debt_service = estimated_principal * annuity_factor
         calculated_dscr = ebitda / estimated_debt_service if estimated_debt_service > 0 else 0
     else:
         # No debt service info - assume coverage equals EBITDA/Interest
